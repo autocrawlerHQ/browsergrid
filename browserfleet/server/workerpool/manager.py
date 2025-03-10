@@ -1,338 +1,379 @@
-import uuid
+"""
+WorkPoolManager for managing work pools and workers
+"""
 import logging
-from typing import Dict, Any, Optional, Tuple, Type
+from typing import Optional, List, Dict, Any
 from uuid import UUID
-from datetime import datetime
+import os
+import json
+import subprocess
+from datetime import datetime, timedelta
 
-from browserfleet.server.workerpool.enums import WorkAllocationStrategy, WorkPoolStatus
-from browserfleet.server.workerpool.schemas import WorkPoolConfig, WorkPoolStats
+from sqlalchemy.orm import Session as SQLAlchemySession
 
+from browserfleet.server.sessions.enums import SessionStatus
+from browserfleet.server.workerpool.enums import WorkPoolStatus, WorkerStatus, ProviderType
+from browserfleet.server.sessions.models import Session as SessionModel
+from browserfleet.server.workerpool.models import WorkPool as WorkPoolModel, Worker as WorkerModel
 
-from browserfleet.server.workers.enums import WorkerStatus
-from browserfleet.server.workers.schema import WorkerConfig
-from browserfleet.server.workers.manager import Worker
-
-# todo: integrate with db
 logger = logging.getLogger(__name__)
 
-class WorkPool:
-    """
-    Represents a pool of workers that can execute browser sessions
-    """
-    def __init__(self, pool_id: UUID, config: WorkPoolConfig):
-        self.pool_id = pool_id
-        self.config = config
-        self.status = WorkPoolStatus.ACTIVE
-        self.workers: Dict[UUID, Worker] = {}
-        self.stats = WorkPoolStats()
-        self.last_scale_time = datetime.utcnow()
-        
-        # Worker type implementation mapping
-        # In a real system, this would use a plugin system or factory pattern
-        self._worker_types: Dict[str, Type[Worker]] = {}
+class WorkPoolManager:
+    """Manages work pools and workers"""
     
-    def register_worker_type(self, worker_type: str, worker_class: Type[Worker]):
-        """Register a worker type implementation"""
-        self._worker_types[worker_type] = worker_class
-    
-    async def create_worker(self, worker_config: Optional[WorkerConfig] = None) -> Tuple[UUID, Worker]:
+    @staticmethod
+    def assign_session_to_work_pool(db: SQLAlchemySession, session_id: UUID, work_pool_id: Optional[UUID] = None) -> bool:
         """
-        Create and register a new worker in this pool
+        Assign a session to a work pool.
         
-        Args:
-            worker_config: Optional custom config for this worker.
-                           If not provided, use the pool default.
+        If work_pool_id is provided, it will try to assign to that specific pool.
+        If not, it will choose the best available pool based on capacity and current load.
         
-        Returns:
-            Tuple of (worker_id, worker_instance)
+        Returns True if assigned successfully, False otherwise.
         """
-        # Use provided config or pool default
-        config = worker_config or self.config.default_worker_config
-        
-        # Generate a worker ID
-        worker_id = uuid.uuid4()
-        
-        # Get the appropriate worker class
-        worker_class = self._worker_types.get(
-            str(config.worker_type),
-            None
-        )
-        
-        if not worker_class:
-            logger.error(f"No implementation found for worker type: {config.worker_type}")
-            raise ValueError(f"Unsupported worker type: {config.worker_type}")
-        
-        # Create the worker
-        worker = worker_class(worker_id=worker_id, config=config)
-        
-        # Register it in our pool
-        self.workers[worker_id] = worker
-        
-        # Start the worker
-        success = await worker.start()
-        if not success:
-            logger.error(f"Failed to start worker {worker_id}")
-            self.workers.pop(worker_id, None)
-            raise RuntimeError(f"Failed to start worker {worker_id}")
-        
-        # Update pool stats
-        await self.update_stats()
-        
-        return worker_id, worker
-    
-    async def remove_worker(self, worker_id: UUID) -> bool:
-        """
-        Remove a worker from the pool
-        
-        Args:
-            worker_id: ID of the worker to remove
-        
-        Returns:
-            True if the worker was removed, False otherwise
-        """
-        worker = self.workers.get(worker_id)
-        if not worker:
-            logger.warning(f"Worker {worker_id} not found in pool {self.pool_id}")
+        session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+        if not session:
+            logger.error(f"Session with ID {session_id} not found")
             return False
         
-        # Try to stop the worker gracefully
-        try:
-            await worker.stop()
-        except Exception as e:
-            logger.error(f"Error stopping worker {worker_id}: {e}")
+        if session.status != SessionStatus.PENDING:
+            logger.error(f"Cannot assign session {session_id} with status {session.status}")
+            return False
         
-        # Remove from our registry
-        self.workers.pop(worker_id, None)
+        # If work_pool_id is provided, try to assign to that specific pool
+        if work_pool_id:
+            work_pool = db.query(WorkPoolModel).filter(
+                WorkPoolModel.id == work_pool_id,
+                WorkPoolModel.status == WorkPoolStatus.ACTIVE
+            ).first()
+            
+            if not work_pool:
+                logger.error(f"Work pool with ID {work_pool_id} not found or not active")
+                return False
+            
+            session.work_pool_id = work_pool_id
+            db.commit()
+            logger.info(f"Assigned session {session_id} to work pool {work_pool_id}")
+            
+            # Apply default configurations from work pool if not specified in session
+            WorkPoolManager._apply_pool_defaults(db, session, work_pool)
+            
+            # Try provisioning the session via the orchestration layer
+            WorkPoolManager._try_provision_session(db, session, work_pool)
+            return True
         
-        # Update pool stats
-        await self.update_stats()
+        # Otherwise, find the best available work pool
+        # Get active work pools
+        active_pools = db.query(WorkPoolModel).filter(
+            WorkPoolModel.status == WorkPoolStatus.ACTIVE
+        ).all()
         
+        if not active_pools:
+            logger.error("No active work pools available")
+            return False
+        
+        # Find the best pool based on:
+        # 1. Compatible with session requirements
+        # 2. Has capacity (workers online with available capacity)
+        # 3. Current load
+        
+        best_pool = None
+        best_pool_score = -1
+        
+        for pool in active_pools:
+            # Check compatibility with browser requirements
+            if (pool.default_browser and pool.default_browser != session.browser) or \
+               (pool.default_operating_system and pool.default_operating_system != session.operating_system):
+                continue
+            
+            # Get available workers for this pool
+            available_workers = db.query(WorkerModel).filter(
+                WorkerModel.work_pool_id == pool.id,
+                WorkerModel.status.in_([WorkerStatus.ONLINE, WorkerStatus.BUSY]),
+                WorkerModel.current_load < WorkerModel.capacity
+            ).count()
+            
+            if available_workers == 0:
+                continue
+            
+            # Calculate a score for this pool
+            # This is a simple heuristic - can be improved based on performance metrics
+            score = available_workers * 10  # Higher weight for available workers
+            
+            # Add current sessions as negative score (prefer pools with fewer sessions)
+            current_sessions = db.query(SessionModel).filter(
+                SessionModel.work_pool_id == pool.id,
+                SessionModel.status.in_([SessionStatus.PENDING, SessionStatus.RUNNING])
+            ).count()
+            
+            score -= current_sessions
+            
+            if score > best_pool_score:
+                best_pool = pool
+                best_pool_score = score
+        
+        if best_pool:
+            session.work_pool_id = best_pool.id
+            db.commit()
+            logger.info(f"Assigned session {session_id} to best available work pool {best_pool.id}")
+            
+            # Apply default configurations from work pool if not specified in session
+            WorkPoolManager._apply_pool_defaults(db, session, best_pool)
+            
+            # Try provisioning the session via the orchestration layer
+            WorkPoolManager._try_provision_session(db, session, best_pool)
+            return True
+        
+        logger.error(f"Could not find suitable work pool for session {session_id}")
+        return False
+    
+    @staticmethod
+    def _apply_pool_defaults(db: SQLAlchemySession, session: SessionModel, pool: WorkPoolModel) -> None:
+        """Apply default configurations from the work pool to the session"""
+        modified = False
+        
+        # Apply defaults if not set in session
+        if pool.default_browser and not session.browser:
+            session.browser = pool.default_browser
+            modified = True
+            
+        if pool.default_browser_version and not session.version:
+            session.version = pool.default_browser_version
+            modified = True
+            
+        if pool.default_headless is not None and session.headless is None:
+            session.headless = pool.default_headless
+            modified = True
+            
+        if pool.default_operating_system and not session.operating_system:
+            session.operating_system = pool.default_operating_system
+            modified = True
+            
+        if pool.default_screen and not session.screen:
+            session.screen = pool.default_screen
+            modified = True
+            
+        if pool.default_proxy and not session.proxy:
+            session.proxy = pool.default_proxy
+            modified = True
+            
+        if pool.default_resource_limits and not session.resource_limits:
+            session.resource_limits = pool.default_resource_limits
+            modified = True
+            
+        if pool.default_environment and not session.environment:
+            session.environment = pool.default_environment
+            modified = True
+        
+        if modified:
+            db.commit()
+            logger.info(f"Applied work pool defaults to session {session.id}")
+    
+    @staticmethod
+    def _try_provision_session(db: SQLAlchemySession, session: SessionModel, pool: WorkPoolModel) -> None:
+        """
+        Try to provision a session using the orchestration layer based on the work pool provider
+        
+        This function does not actually provision the session but prepares it for workers to
+        claim and provision. The actual provisioning is handled by the workers.
+        """
+        # Depending on the provider type, we might want to set specific flags or
+        # connect to specific orchestration APIs in the future (e.g., K8s APIs)
+        if pool.provider_type == ProviderType.DOCKER:
+            logger.info(f"Preparing session {session.id} for Docker provisioning")
+        elif pool.provider_type == ProviderType.AZURE_CONTAINER_INSTANCE:
+            logger.info(f"Preparing session {session.id} for Azure Container Instance provisioning")
+        
+        # The session is now ready to be claimed by a worker
+    
+    @staticmethod
+    def find_available_workers(db: SQLAlchemySession, work_pool_id: UUID) -> List[Dict[str, Any]]:
+        """Find available workers for a work pool"""
+        workers = db.query(WorkerModel).filter(
+            WorkerModel.work_pool_id == work_pool_id,
+            WorkerModel.status.in_([WorkerStatus.ONLINE, WorkerStatus.BUSY]),
+            WorkerModel.current_load < WorkerModel.capacity
+        ).all()
+        
+        return [
+            {
+                "id": str(worker.id),
+                "name": worker.name,
+                "status": worker.status.value,
+                "capacity": worker.capacity,
+                "current_load": worker.current_load,
+                "available_slots": worker.capacity - worker.current_load,
+                "last_heartbeat": worker.last_heartbeat.isoformat() if worker.last_heartbeat else None
+            }
+            for worker in workers
+        ]
+    
+    @staticmethod
+    def mark_worker_offline(db: SQLAlchemySession, worker_id: UUID) -> bool:
+        """Mark a worker as offline if it hasn't sent a heartbeat in too long"""
+        from datetime import datetime, timedelta
+        
+        worker = db.query(WorkerModel).filter(WorkerModel.id == worker_id).first()
+        if not worker:
+            logger.error(f"Worker with ID {worker_id} not found")
+            return False
+        
+        # If last heartbeat is more than 5 minutes ago, mark as offline
+        if worker.last_heartbeat and worker.last_heartbeat < datetime.now() - timedelta(minutes=5):
+            worker.status = WorkerStatus.OFFLINE
+            db.commit()
+            logger.info(f"Marked worker {worker_id} as offline due to missing heartbeats")
+            return True
+        
+        return False
+    
+    @staticmethod
+    def update_session_status(db: SQLAlchemySession, session_id: UUID, status: SessionStatus, details: Optional[Dict[str, Any]] = None) -> bool:
+        """Update a session's status and details"""
+        session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+        if not session:
+            logger.error(f"Session with ID {session_id} not found")
+            return False
+        
+        session.status = status
+        
+        # Update additional details if provided
+        if details:
+            if "container_id" in details:
+                session.container_id = details["container_id"]
+            if "ws_endpoint" in details:
+                session.ws_endpoint = details["ws_endpoint"]
+            if "live_url" in details:
+                session.live_url = details["live_url"]
+        
+        db.commit()
+        
+        # If session is completed/failed, update worker load
+        if status in [SessionStatus.COMPLETED, SessionStatus.FAILED, SessionStatus.EXPIRED] and session.worker_id:
+            worker = db.query(WorkerModel).filter(WorkerModel.id == session.worker_id).first()
+            if worker and worker.current_load > 0:
+                worker.current_load -= 1
+                db.commit()
+                logger.info(f"Decreased load for worker {worker.id} after session {session_id} {status}")
+        
+        logger.info(f"Updated session {session_id} status to {status}")
         return True
     
-    async def select_worker_for_session(self, session_requirements: Optional[Dict[str, Any]] = None) -> Optional[Worker]:
+    @staticmethod
+    def provision_session(db: SQLAlchemySession, session_id: UUID) -> bool:
         """
-        Select a worker for a new session based on the allocation strategy
+        Provision a session using the orchestration layer
         
-        Args:
-            session_requirements: Optional requirements for the session
-                                 that may influence worker selection
-        
-        Returns:
-            Selected worker or None if no suitable worker is available
+        This method is used for direct provisioning without worker involvement.
+        It's primarily for development/testing or for providers that can be
+        directly managed by the orchestration layer.
         """
-        # Filter out workers that are not online
-        available_workers = [
-            w for w in self.workers.values() 
-            if w.status == WorkerStatus.ONLINE
-        ]
+        session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+        if not session:
+            logger.error(f"Session with ID {session_id} not found")
+            return False
         
-        if not available_workers:
-            logger.warning(f"No available workers in pool {self.pool_id}")
-            return None
+        work_pool = None
+        if session.work_pool_id:
+            work_pool = db.query(WorkPoolModel).filter(WorkPoolModel.id == session.work_pool_id).first()
         
-        # Apply allocation strategy
-        strategy = self.config.allocation_strategy
+        if not work_pool:
+            logger.error(f"Session {session_id} is not assigned to a work pool")
+            return False
         
-        if strategy == WorkAllocationStrategy.ROUND_ROBIN:
-            # Simple round-robin
-            return available_workers[0]  # In a real impl, we'd track the last used index
+        # Extract session configuration
+        session_config = {
+            "id": str(session.id),
+            "browser": session.browser.value,
+            "version": session.version.value,
+            "headless": session.headless,
+            "operating_system": session.operating_system.value,
+            "screen": session.screen,
+            "proxy": session.proxy,
+            "resource_limits": session.resource_limits,
+            "environment": session.environment,
+        }
         
-        elif strategy == WorkAllocationStrategy.LEAST_BUSY:
-            # Sort workers by number of running containers
-            return sorted(
-                available_workers, 
-                key=lambda w: w.stats.running_containers
-            )[0]
+        # Extract pool provider configuration
+        provider_config = work_pool.provider_config or {}
         
-        elif strategy == WorkAllocationStrategy.RANDOM:
-            # Random worker
-            import random
-            return random.choice(available_workers)
-        
-        elif strategy == WorkAllocationStrategy.LEAST_RECENTLY_USED:
-            # Would need to track last used time for each worker
-            # For this mock implementation, just use the first one
-            return available_workers[0]
-        
-        # Default fallback
-        return available_workers[0]
-    
-    async def scale_workers(self) -> Tuple[int, int]:
-        """
-        Scale the number of workers based on current utilization
-        
-        Returns:
-            Tuple of (added_workers, removed_workers)
-        """
-        if not self.config.auto_scaling_enabled:
-            return 0, 0
-        
-        # Check if we need to cool down after scaling
-        now = datetime.utcnow()
-        since_last_scale = (now - self.last_scale_time).total_seconds() / 60.0
-        
-        if since_last_scale < self.config.scale_down_delay_minutes:
-            logger.info(f"Cooling down after recent scaling, {since_last_scale:.1f} minutes elapsed")
-            return 0, 0
-        
-        # Get current worker counts
-        total_workers = len(self.workers)
-        online_workers = sum(1 for w in self.workers.values() if w.status == WorkerStatus.ONLINE)
-        
-        if online_workers == 0:
-            # No workers online, add one
-            if total_workers < self.config.max_workers:
-                try:
-                    await self.create_worker()
-                    self.last_scale_time = now
-                    return 1, 0
-                except Exception as e:
-                    logger.error(f"Failed to scale up: {e}")
-                    return 0, 0
-            return 0, 0
-        
-        # Calculate pool utilization
-        total_capacity = sum(w.config.concurrency_limit for w in self.workers.values() 
-                          if w.status == WorkerStatus.ONLINE)
-        
-        total_running = sum(w.stats.running_containers for w in self.workers.values())
-        
-        if total_capacity > 0:
-            utilization = total_running / total_capacity
-        else:
-            utilization = 1.0  # Force scale up if we somehow have no capacity
-        
-        self.stats.utilization_percent = utilization * 100.0
-        
-        added, removed = 0, 0
-        
-        # Scale up logic
-        if utilization >= self.config.scale_up_threshold:
-            if total_workers < self.config.max_workers:
-                try:
-                    worker_id, _ = await self.create_worker()
-                    logger.info(f"Scaled up by adding worker {worker_id}, utilization: {utilization:.1%}")
-                    added = 1
-                    self.last_scale_time = now
-                except Exception as e:
-                    logger.error(f"Failed to scale up: {e}")
-        
-        # Scale down logic
-        elif (utilization <= self.config.scale_down_threshold and 
-              total_workers > self.config.min_workers and
-              since_last_scale >= self.config.scale_down_delay_minutes):
-            
-            # Find least busy worker to remove
-            workers_by_load = sorted(
-                [w for w in self.workers.values() if w.status == WorkerStatus.ONLINE],
-                key=lambda w: w.stats.running_containers
-            )
-            
-            if workers_by_load and workers_by_load[0].stats.running_containers == 0:
-                worker_to_remove = workers_by_load[0]
-                try:
-                    await self.remove_worker(worker_to_remove.worker_id)
-                    logger.info(f"Scaled down by removing worker {worker_to_remove.worker_id}, utilization: {utilization:.1%}")
-                    removed = 1
-                    self.last_scale_time = now
-                except Exception as e:
-                    logger.error(f"Failed to scale down: {e}")
-        
-        return added, removed
-    
-    async def update_stats(self) -> WorkPoolStats:
-        """
-        Update and return the pool statistics
-        
-        Returns:
-            Updated pool statistics
-        """
-        worker_count = len(self.workers)
-        online_workers = sum(1 for w in self.workers.values() if w.status == WorkerStatus.ONLINE)
-        busy_workers = sum(1 for w in self.workers.values() 
-                        if w.status == WorkerStatus.BUSY)
-        error_workers = sum(1 for w in self.workers.values() 
-                         if w.status == WorkerStatus.ERROR)
-        
-        # Get stats from all workers
-        worker_stats = []
-        running_containers = 0
-        
-        for worker in self.workers.values():
+        # This is an example of direct provisioning for development/testing
+        if work_pool.provider_type == ProviderType.DOCKER:
             try:
-                stats = await worker.get_worker_stats()
-                worker_stats.append(stats)
-                running_containers += stats.running_containers
-            except Exception as e:
-                logger.error(f"Failed to get stats from worker {worker.worker_id}: {e}")
-        
-        # Calculate averages
-        if worker_stats:
-            cpu_values = [s.cpu_percent for s in worker_stats if s.cpu_percent is not None]
-            memory_values = [s.memory_percent for s in worker_stats if s.memory_percent is not None]
+                # Direct Docker provisioning example
+                import docker
+                client = docker.from_env()
+                
+                # Determine image
+                browser = session.browser.value
+                version = session.version.value
+                registry = provider_config.get("registry", "")
+                image_prefix = provider_config.get("image_prefix", "browserless")
+                
+                if registry:
+                    registry = registry + "/"
+                
+                image = f"{registry}{image_prefix}/{browser}:{version}"
+                
+                # Environment variables
+                env = {
+                    "BROWSERLESS_HEADLESS": str(session.headless).lower(),
+                    "BROWSERLESS_SESSION_ID": str(session.id),
+                    **session.environment
+                }
+                
+                # Resource limits
+                resource_limits = session.resource_limits or {}
+                cpu_limit = resource_limits.get("cpu")
+                memory_limit = resource_limits.get("memory", "2G")
+                
+                # Network
+                network = provider_config.get("network", "bridge")
+                
+                # Create and start container
+                container = client.containers.run(
+                    image=image,
+                    detach=True,
+                    environment=env,
+                    name=f"browserfleet-{str(session.id)[:8]}",
+                    ports={'3000/tcp': None},  # Auto-assign port
+                    cpu_quota=int(float(cpu_limit) * 100000) if cpu_limit else None,
+                    mem_limit=memory_limit,
+                    network=network
+                )
+                
+                # Get container info for connection details
+                container.reload()
+                container_id = container.id
+                
+                # Get the host port that was mapped to container port 3000
+                port_bindings = container.attrs['NetworkSettings']['Ports']['3000/tcp']
+                host_port = port_bindings[0]['HostPort'] if port_bindings else None
+                
+                if not host_port:
+                    logger.error(f"Failed to get port mapping for container {container_id}")
+                    return False
+                
+                # Update session with connection details
+                session.container_id = container_id
+                session.ws_endpoint = f"ws://localhost:{host_port}"
+                session.live_url = f"http://localhost:{host_port}"
+                session.status = SessionStatus.RUNNING
+                db.commit()
+                
+                logger.info(f"Provisioned Docker container for session {session.id}: {container_id}")
+                return True
             
-            avg_cpu = sum(cpu_values) / len(cpu_values) if cpu_values else None
-            avg_memory = sum(memory_values) / len(memory_values) if memory_values else None
-        else:
-            avg_cpu = None
-            avg_memory = None
-        
-        # Calculate utilization
-        total_capacity = sum(w.config.concurrency_limit for w in self.workers.values() 
-                          if w.status == WorkerStatus.ONLINE)
-        
-        if total_capacity > 0:
-            utilization = running_containers / total_capacity
-        else:
-            utilization = 0.0
-        
-        # Update stats
-        self.stats = WorkPoolStats(
-            worker_count=worker_count,
-            online_workers=online_workers,
-            busy_workers=busy_workers,
-            error_workers=error_workers,
-            total_running_containers=running_containers,
-            average_cpu_percent=avg_cpu,
-            average_memory_percent=avg_memory,
-            utilization_percent=utilization * 100.0,
-            last_updated=datetime.utcnow().isoformat() + "Z"
-        )
-        
-        return self.stats
-    
-    async def health_check(self) -> bool:
-        """
-        Check the health of the pool and its workers
-        
-        Returns:
-            True if the pool is healthy, False otherwise
-        """
-        # Check all workers
-        for worker_id, worker in list(self.workers.items()):
-            try:
-                is_healthy = await worker.health_check()
-                if not is_healthy and worker.status == WorkerStatus.ERROR:
-                    logger.warning(f"Worker {worker_id} is unhealthy")
             except Exception as e:
-                logger.error(f"Health check failed for worker {worker_id}: {e}")
-                worker.status = WorkerStatus.ERROR
+                logger.error(f"Failed to provision Docker container for session {session.id}: {str(e)}")
+                session.status = SessionStatus.FAILED
+                db.commit()
+                return False
+            
+        elif work_pool.provider_type == ProviderType.AZURE_CONTAINER_INSTANCE:
+            logger.warning(f"Direct Azure Container Instance provisioning not implemented, session {session.id}")
+            return False
         
-        # Update pool health status
-        error_count = sum(1 for w in self.workers.values() if w.status == WorkerStatus.ERROR)
-        total_workers = len(self.workers)
-        
-        if total_workers == 0:
-            # No workers, but not necessarily an error
-            self.status = WorkPoolStatus.ACTIVE
-        elif error_count == total_workers:
-            # All workers are in error state
-            self.status = WorkPoolStatus.ERROR
         else:
-            # Some workers are healthy
-            self.status = WorkPoolStatus.ACTIVE
-        
-        # Update pool stats
-        await self.update_stats()
-        
-        return self.status != WorkPoolStatus.ERROR
+            logger.error(f"Unknown provider type for pool {work_pool.id}: {work_pool.provider_type}")
+            return False

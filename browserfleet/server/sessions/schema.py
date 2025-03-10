@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, validator, root_validator
 
-from browserfleet.server.sessions.enums import OperatingSystem, Browser, BrowserVersion, SessionStatus
+from browserfleet.server.sessions.enums import OperatingSystem, Browser, BrowserVersion, SessionStatus, SessionEventType
 
 class ProxyConfig(BaseModel):
     """Configuration for HTTP proxy"""
@@ -59,11 +59,21 @@ class ScreenConfig(BaseModel):
 # Session event schemas
 class SessionEventBase(BaseModel):
     """Base model for session events"""
-    event: str
+    event: SessionEventType
     data: Optional[Dict[str, Any]] = None
     
     class Config:
         orm_mode = True
+        
+    @validator('event')
+    def validate_event_type(cls, v):
+        """Convert string to enum value if needed"""
+        if isinstance(v, str):
+            try:
+                return SessionEventType(v)
+            except ValueError:
+                raise ValueError(f"Invalid event type: {v}")
+        return v
 
 class SessionEventCreate(SessionEventBase):
     """Schema for creating session events"""
@@ -122,6 +132,7 @@ class SessionBase(BaseModel):
 class SessionCreate(SessionBase):
     """Schema for creating a new session"""
     id: Optional[UUID] = Field(default_factory=uuid4)
+    work_pool_id: Optional[UUID] = None
     
     class Config:
         schema_extra = {
@@ -134,6 +145,7 @@ class SessionCreate(SessionBase):
                 "screen": {"width": 1280, "height": 1024, "dpi": 96, "scale": 1.0},
                 "proxy": {"proxy_url": "http://127.0.0.1:9090"},
                 "webhooks_enabled": True,
+                "work_pool_id": "docker-pool-1"
             }
         }
 
@@ -145,6 +157,8 @@ class Session(SessionBase):
     updated_at: datetime
     expires_at: Optional[datetime] = None
     container_id: Optional[str] = None
+    work_pool_id: Optional[UUID] = None
+    worker_id: Optional[UUID] = None
     
     class Config:
         orm_mode = True

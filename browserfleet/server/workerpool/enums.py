@@ -1,16 +1,21 @@
 import enum
+
+class WorkerStatus(enum.Enum):
+    """Status for a worker"""
+    OFFLINE = "offline"
+    ONLINE = "online"
+    BUSY = "busy"
+    DRAINING = "draining"  # No new sessions, but finishing current ones
+    FAILED = "failed"
+
 class WorkPoolStatus(enum.Enum):
-    """Status of a work pool"""
+    """Status for a work pool"""
     ACTIVE = "active"
-    PAUSED = "paused"
-    ERROR = "error"
-    MAINTENANCE = "maintenance"
+    PAUSED = "paused"  # Not accepting new sessions
+    DRAINING = "draining"  # Not accepting new sessions, but processing current ones
+    INACTIVE = "inactive"
 
-class WorkAllocationStrategy(enum.Enum):
-    """Strategy for allocating work to workers"""
-    ROUND_ROBIN = "round_robin"
-    LEAST_BUSY = "least_busy"
-    RANDOM = "random"
-    LEAST_RECENTLY_USED = "least_recently_used"
-
-
+class ProviderType(enum.Enum):
+    """Type of provider for worker"""
+    DOCKER = "docker"
+    AZURE_CONTAINER_INSTANCE = "azure_container_instance"

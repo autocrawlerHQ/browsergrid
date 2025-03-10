@@ -11,7 +11,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 
-from browserfleet.server.database.base import Base
+from browserfleet.server.core.db.base import Base
 from browserfleet.server.sessions.enums import OperatingSystem, Browser, BrowserVersion, SessionStatus
 
 class Session(Base):
@@ -48,10 +48,9 @@ class Session(Base):
     ws_endpoint = Column(String, nullable=True)
     live_url = Column(String, nullable=True)
 
-    # work assignments
-    # Work assignment
-    pool_id = Column(UUID(as_uuid=True), ForeignKey("work_pools.id", ondelete="SET NULL"), nullable=True)
+    # WorkPool and Worker references
     worker_id = Column(UUID(as_uuid=True), ForeignKey("workers.id", ondelete="SET NULL"), nullable=True)
+    work_pool_id = Column(UUID(as_uuid=True), ForeignKey("work_pools.id", ondelete="SET NULL"), nullable=True)
     
     # Relationships
     events = relationship("SessionEvent", back_populates="session", cascade="all, delete-orphan")

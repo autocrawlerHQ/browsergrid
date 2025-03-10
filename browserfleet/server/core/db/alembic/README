@@ -1,0 +1,4 @@
+Generic single-database configuration with Alembic.
+
+This directory contains Alembic migrations for the browserfleet database.
+Use the manage_db.py script to run migrations and create new ones. 

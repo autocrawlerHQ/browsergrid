@@ -1,7 +1,3 @@
-# browserfleet/server/models/webhook.py
-"""
-Webhook database models for browserfleet API
-"""
 import enum
 import uuid
 
@@ -12,7 +8,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 
-from browserfleet.server.database.base import Base
+from browserfleet.server.core.db.base import Base
 from browserfleet.server.webhooks.enums import WebhookTiming, WebhookStatus
 
 class CDPWebhook(Base):
