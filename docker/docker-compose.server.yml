@@ -1,49 +1,54 @@
-name: browserfleet-server
+name: browsergrid-server
 services:
   db:
+    container_name: browsergrid-db
     image: postgres:17-alpine
     volumes:
       - postgres_data:/var/lib/postgresql/data/
     env_file:
       - ../.env
     environment:
-      - POSTGRES_USER=${BROWSERFLEET_POSTGRES_USER}
-      - POSTGRES_PASSWORD=${BROWSERFLEET_POSTGRES_PASSWORD}
-      - POSTGRES_DB=${BROWSERFLEET_POSTGRES_DB}
+      - POSTGRES_USER=${BROWSERGRID_POSTGRES_USER:-browsergrid}
+      - POSTGRES_PASSWORD=${BROWSERGRID_POSTGRES_PASSWORD:-browsergrid}
+      - POSTGRES_DB=${BROWSERGRID_POSTGRES_DB:-browsergrid}
     ports:
-      - "${BROWSERFLEET_POSTGRES_PORT:-5432}:5432"
+      - "${BROWSERGRID_POSTGRES_PORT:-5432}:5432"
     networks:
-      - browserfleet_server
+      - browsergrid_server
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${BROWSERFLEET_POSTGRES_USER} -d ${BROWSERFLEET_POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${BROWSERGRID_POSTGRES_USER} -d ${BROWSERGRID_POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   server:
+    container_name: browsergrid-server
     build:
       context: ..
       dockerfile: docker/server/Dockerfile
     env_file:
       - ../.env
+    environment:
+      - BROWSERGRID_ENV=dev
+      - WATCHFILES_FORCE_POLLING=true
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "${BROWSERFLEET_API_PORT:-8765}:8765"
+      - "${BROWSERGRID_API_PORT:-8765}:8765"
     volumes:
       - ..:/app
     networks:
-      - browserfleet_server
+      - browsergrid_server
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${BROWSERFLEET_API_PORT:-8765}/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:${BROWSERGRID_API_PORT:-8765}/health"]
       interval: 10s
       timeout: 5s
       retries: 3
 
 networks:
-  browserfleet_server:
-    name: browserfleet_server
+  browsergrid_server:
+    name: browsergrid_server
 
 volumes:
   postgres_data: 

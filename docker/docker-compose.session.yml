@@ -10,7 +10,7 @@ x-base-services:
     volumes:
       - /dev/shm:/dev/shm
     environment:
-      - browserfleet_SESSION_ID=${SESSION_ID}
+      - browsergrid_SESSION_ID=${SESSION_ID}
       - ENABLE_VNC=${ENABLE_VNC:-true}
       - RESOLUTION=${RESOLUTION:-1280x1024x24}
       - HEADLESS=${HEADLESS:-false}
@@ -19,7 +19,7 @@ x-base-services:
       - "${NOVNC_PORT:-6080}:6080"       
       - "${DEVTOOLS_PORT:-9222}:9222"     
     networks:
-      - browserfleet
+      - browsergrid
     healthcheck:
       test: ["CMD-SHELL", "pgrep chrome || exit 1"]
       interval: 5s
@@ -36,7 +36,7 @@ x-captcha-services:
     volumes:
       - ./docker/nginx/nginx.conf:/etc/nginx/conf.d/default.conf
     networks:
-      - browserfleet
+      - browsergrid
     depends_on:
       browser:
         condition: service_healthy
@@ -57,7 +57,7 @@ x-captcha-services:
     ports:
       - "${MULTIPLEX_PORT:-9000}:9000"
     networks:
-      - browserfleet
+      - browsergrid
     depends_on:
       nginx:
         condition: service_healthy
@@ -78,7 +78,7 @@ x-captcha-services:
       - CAPTCHA_SERVICE=${CAPTCHA_SERVICE:-internal}
       - CAPTCHA_API_KEY=${CAPTCHA_API_KEY:-}
     networks:
-      - browserfleet
+      - browsergrid
     depends_on:
       multiplex:
         condition: service_healthy
@@ -101,7 +101,7 @@ x-proxy-services:
       - PROXY_USERNAME=${PROXY_USERNAME:-}
       - PROXY_PASSWORD=${PROXY_PASSWORD:-}
     networks:
-      - browserfleet
+      - browsergrid
     command: >
       mitmweb --web-host 0.0.0.0 
               --web-port 8081 
@@ -120,5 +120,5 @@ services:
   <<: *proxy-services
 
 networks:
-  browserfleet:
-    name: browserfleet.${SESSION_ID:-default}
+  browsergrid:
+    name: src.${SESSION_ID:-default}

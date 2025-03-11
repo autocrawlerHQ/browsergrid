@@ -2,7 +2,13 @@
 set -e
 
 # Run migrations
-python -m browserfleet.server.manage migrate
+python -m src.server.manage migrate
 
-# Start the server
-exec python -m browserfleet.server.manage runserver --host $BROWSERFLEET_API_HOST --port $BROWSERFLEET_API_PORT 
+# Start the server with auto-reload in development
+if [ "$BROWSERGRID_ENV" = "dev" ]; then
+    echo "Starting server in development mode with auto-reload"
+    exec python -m src.server.manage runserver --host $BROWSERGRID_API_HOST --port $BROWSERGRID_API_PORT --reload
+else
+    echo "Starting server in production mode"
+    exec python -m src.server.manage runserver --host $BROWSERGRID_API_HOST --port $BROWSERGRID_API_PORT
+fi

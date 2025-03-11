@@ -1,4 +1,4 @@
-# BrowserFleet Makefile
+# Browsergrid Makefile
 # This Makefile provides commands for building, starting, and stopping Docker services
 
 # Environment-specific settings
@@ -67,7 +67,7 @@ stop:
 # Default target
 .PHONY: help
 help:
-	@echo "BrowserFleet Makefile"
+	@echo "Browsergrid Makefile"
 	@echo ""
 	@echo "Environment targets:"
 	@echo "  make server           - Set environment to Server"
