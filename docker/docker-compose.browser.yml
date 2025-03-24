@@ -1,0 +1,70 @@
+name: browsergrid
+
+services:
+  base:
+    container_name: browsergrid-base
+    image: browsergrid/base:latest
+    build:
+      context: .
+      dockerfile: docker/browsers/base/Dockerfile
+    env_file:
+      - .env
+    ports:
+      - "${VNC_PORT:-5900}:5900"
+      - "${NOVNC_PORT:-6080}:6080"
+    networks:
+      - browsergrid
+      
+  browser:
+    container_name: browsergrid-${BROWSER:-chrome}
+    build:
+      context: .
+      dockerfile: docker/browsers/${BROWSER:-chrome}/Dockerfile
+      args:
+        BROWSER_VERSION: ${BROWSER_VERSION:-latest}
+    shm_size: ${SHM_SIZE:-2gb}
+    volumes:
+      - /dev/shm:/dev/shm
+    env_file:
+      - .env
+    environment:
+      - browsergrid_SESSION_ID=${SESSION_ID:-default}
+      - ENABLE_VNC=${ENABLE_VNC:-true}
+      - RESOLUTION=${RESOLUTION:-1920x1080x24}
+      - HEADLESS=${HEADLESS:-false}
+    ports:
+      - "${VNC_PORT:-5900}:5900"          
+      - "${NOVNC_PORT:-6080}:6080"       
+      - "9222:9222"
+    networks:
+      - browsergrid
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep ${BROWSER:-chrome} || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      
+  browsermux:
+    container_name: browsergrid-browsermux
+    build:
+      context: .
+      dockerfile: docker/browsermux/Dockerfile
+    env_file:
+      - .env
+    environment:
+      - PORT=${BROWSERMUX_PORT:-8080}
+      - BROWSER_URL=http://browser:9222
+      - MAX_MESSAGE_SIZE=${MAX_MESSAGE_SIZE:-1048576}
+      - CONNECTION_TIMEOUT_SECONDS=${CONNECTION_TIMEOUT_SECONDS:-10}
+
+    ports:
+      - "${BROWSERMUX_PORT:-8080}:8080"
+    networks:
+      - browsergrid
+    depends_on:
+      browser:
+        condition: service_healthy
+
+networks:
+  browsergrid:
+    name: src.${SESSION_ID:-default} 
