@@ -22,7 +22,6 @@ def register_middleware(
 ) -> bool:
     """Register a new middleware to the MIDDLEWARE list"""
     try:
-        # Make sure the middleware class exists
         import_string(class_path)
         
         # Create the middleware config
@@ -46,18 +45,15 @@ def register_middleware(
 def apply_middlewares(app: FastAPI, middleware_config: List[Dict[str, Any]], **global_kwargs: Any) -> FastAPI:
     """Apply middleware to a FastAPI application based on configuration"""
     for middleware in middleware_config:
-        # Skip if no class defined
         middleware_class_path = middleware.get('class')
         if not middleware_class_path:
             continue
         
-        # Get the middleware class
         try:
             middleware_class = import_string(middleware_class_path)
         except ImportError:
             continue
         
-        # Get the middleware kwargs
         kwargs = middleware.get('kwargs', {}).copy()
         
         # Update kwargs with global kwargs if the key exists in both
@@ -67,7 +63,6 @@ def apply_middlewares(app: FastAPI, middleware_config: List[Dict[str, Any]], **g
                 if kwargs[key] is None:
                     kwargs[key] = value
         
-        # Apply the middleware
         try:
             app.add_middleware(middleware_class, **kwargs)
         except Exception as e:

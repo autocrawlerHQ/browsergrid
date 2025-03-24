@@ -21,43 +21,16 @@ from typing import Dict, Any, Optional, List, Union
 from datetime import datetime, timedelta
 from urllib.parse import urljoin
 from enum import Enum
+from src.server.sessions.enums import SessionEventType, SessionStatus
 
-# Configure logging
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger("browsergrid-worker")
 
-# Import enums
-try:
-    from src.server.sessions.enums import SessionEventType, SessionStatus
-except ImportError:
-    # Define local versions if imports aren't available
-    class SessionEventType(str, Enum):
-        """Event types for browser session lifecycle"""
-        SESSION_CREATED = "session_created"
-        SESSION_ASSIGNED = "session_assigned"
-        SESSION_STARTING = "session_starting"
-        BROWSER_STARTED = "browser_started"
-        SESSION_IDLE = "session_idle"
-        SESSION_ACTIVE = "session_active"
-        SESSION_COMPLETED = "session_completed"
-        SESSION_CRASHED = "session_crashed"
-        SESSION_TIMED_OUT = "session_timed_out"
-        SESSION_TERMINATED = "session_terminated"
-    
-    class SessionStatus(str, Enum):
-        """Status for a browser session"""
-        PENDING = "pending"
-        STARTING = "starting"
-        RUNNING = "running"
-        COMPLETED = "completed"
-        FAILED = "failed"
-        EXPIRED = "expired"
-        CRASHED = "crashed"
-        TIMED_OUT = "timed_out"
-        TERMINATED = "terminated"
+
 
 class BrowsergridWorker:
     """Client for Browsergrid worker node"""

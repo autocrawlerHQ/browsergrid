@@ -13,8 +13,9 @@ from sqlalchemy.orm import relationship
 
 from src.server.core.db.base import Base
 from src.server.sessions.enums import OperatingSystem, Browser, BrowserVersion, SessionStatus
+from src.server.core.db.crud import CRUDMixin
 
-class Session(Base):
+class Session(Base, CRUDMixin):
     """Browser session database model"""
     __tablename__ = "sessions"
     
@@ -83,7 +84,7 @@ class Session(Base):
             expires_at=expires_at
         )
 
-class SessionEvent(Base):
+class SessionEvent(Base, CRUDMixin):
     """Event database model for a browser session"""
     __tablename__ = "session_events"
     
@@ -96,7 +97,7 @@ class SessionEvent(Base):
     # Relationship
     session = relationship("Session", back_populates="events")
 
-class SessionMetrics(Base):
+class SessionMetrics(Base, CRUDMixin):
     """Metrics database model for a browser session"""
     __tablename__ = "session_metrics"
     

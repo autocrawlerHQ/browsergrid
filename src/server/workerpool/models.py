@@ -14,8 +14,9 @@ from sqlalchemy.orm import relationship
 from src.server.core.db.base import Base
 from src.server.workerpool.enums import WorkerStatus, WorkPoolStatus, ProviderType
 from src.server.sessions.enums import OperatingSystem, Browser, BrowserVersion
+from src.server.core.db.crud import CRUDMixin
 
-class WorkPool(Base):
+class WorkPool(Base, CRUDMixin):
     """WorkPool database model"""
     __tablename__ = "work_pools"
     
@@ -57,7 +58,7 @@ class WorkPool(Base):
     sessions = relationship("Session", back_populates="work_pool")
 
 
-class Worker(Base):
+class Worker(Base, CRUDMixin):
     """Worker database model"""
     __tablename__ = "workers"
     

@@ -10,8 +10,10 @@ from sqlalchemy.orm import relationship
 
 from src.server.core.db.base import Base
 from src.server.webhooks.enums import WebhookTiming, WebhookStatus
+from src.server.core.db.crud import CRUDMixin
 
-class CDPWebhook(Base):
+
+class CDPWebhook(Base, CRUDMixin):
     """CDP webhook database model"""
     __tablename__ = "cdp_webhooks"
     
@@ -36,7 +38,7 @@ class CDPWebhook(Base):
     session = relationship("Session", back_populates="webhooks")
     executions = relationship("WebhookExecution", back_populates="webhook", cascade="all, delete-orphan")
 
-class WebhookExecution(Base):
+class WebhookExecution(Base, CRUDMixin):
     """Webhook execution database model"""
     __tablename__ = "webhook_executions"
     

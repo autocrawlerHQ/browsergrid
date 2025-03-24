@@ -13,6 +13,7 @@ from starlette.types import ASGIApp
 
 from loguru import logger
 
+
 class Middleware(BaseHTTPMiddleware):
     """Base middleware class for request/response hooks"""
     

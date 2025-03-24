@@ -5,6 +5,7 @@ This module defines the FastAPI application instance that can be imported
 directly by Uvicorn for serving, including when using auto-reload.
 """
 import sys
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 
 from src.server.core.settings import (
@@ -16,23 +17,43 @@ from src.server.core.settings import (
     DEBUG,
     UI_ENABLED,
     MIDDLEWARE,
+    DATABASE_URL,
 )
 from src.server.core.apps import apps
 from src.server.core.router import include_router
 from src.server.core.middleware_utils import apply_middlewares
+from src.server.core.db.session import sessionmanager, settings
 
 from loguru import logger
 
 if not apps.apps_ready:
     apps.populate()
 
+# Create an application lifespan context manager to handle database connection
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize database on startup
+    logger.info("Initializing database connection")
+    sessionmanager.init(settings.database_url)
+    
+    # Yield control to FastAPI
+    yield
+    
+    # Cleanup database on shutdown
+    logger.info("Closing database connections")
+    if sessionmanager._engine is not None:
+        await sessionmanager.close()
+
+# Initialize the FastAPI application with the lifespan manager
 server = FastAPI(
     title="browsergrid API",
     description="API for managing browser sessions",
     version="0.1.0",
     debug=DEBUG,
+    lifespan=lifespan,
 )
 
+# Apply middleware
 apply_middlewares(
     app=server, 
     middleware_config=MIDDLEWARE,
@@ -41,8 +62,10 @@ apply_middlewares(
     debug=DEBUG
 )
 
+# Include routers
 include_router(server)
 
+# Mark apps as ready
 apps.ready()
 
 @server.exception_handler(Exception)
