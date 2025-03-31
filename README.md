@@ -3,7 +3,7 @@ easy browser infrastructure with captcha solving
 
 ## Contributing
 
-We welcome contributions! Please refer to our [Contributing Guide](./CONTRIBUTING.md) for more information.
+We welcome contributions! Please refer to our [Contributing Guide](./.github/CONTRIBUTING.md) for more information.
 
 ## License
 
