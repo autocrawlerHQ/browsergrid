@@ -13,8 +13,8 @@ import (
 	"browsermux/internal/api"
 	"browsermux/internal/browser"
 	"browsermux/internal/config"
+	"browsermux/internal/events"
 	"browsermux/internal/webhook"
-	"browsermux/pkg/events"
 )
 
 func main() {

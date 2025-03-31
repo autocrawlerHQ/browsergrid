@@ -1,7 +1,7 @@
 package webhook
 
 import (
-	"browsermux/pkg/events"
+	"browsermux/internal/events"
 )
 
 // Manager manages webhook configurations and executions

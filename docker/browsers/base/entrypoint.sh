@@ -4,6 +4,8 @@ set -e
 rm -f /tmp/.X0-lock #
 
 
+# Update Chrome's homepage to use the HTTP service worker server instead of file:///
+
 /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf &
 
 echo "Supervisor started"
@@ -25,4 +27,5 @@ done
 
 echo "X server is ready!"
 
+# Execute the original command
 exec "$@"

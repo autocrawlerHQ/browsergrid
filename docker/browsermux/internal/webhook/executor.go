@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"browsermux/pkg/events"
+	"browsermux/internal/events"
 )
 
 // Executor handles webhook execution

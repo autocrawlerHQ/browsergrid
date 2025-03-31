@@ -3,12 +3,10 @@ set -e
 
 rm -f /tmp/.X0-lock
 
-
 until xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; do
   echo "Waiting for X server on $DISPLAY..."
   sleep 0.1
 done
-
 
 PROXY_ARG=""
 if [ -n "$PROXY_SERVER" ]; then
@@ -16,10 +14,21 @@ if [ -n "$PROXY_SERVER" ]; then
   PROXY_ARG="--proxy-server=$PROXY_SERVER"
 fi
 
+# find playwright browser path
+# Find the Playwright Chromium executable
+BROWSER_PATH=$(find /home/user/.cache/ms-playwright -path "*/chrome-linux/chrome" -type f -executable | head -1)
 
+if [ -z "$BROWSER_PATH" ]; then
+  echo "Playwright Chromium not found, falling back to system Chrome"
+  BROWSER_PATH="/usr/bin/chromium-browser"
+fi
 
-echo "Starting Chrome..."
-exec /usr/bin/google-chrome-stable \
+export GOOGLE_API_KEY="AIzaSyCkfPOPZXDKNn8hhgu3JrA62wIgC93d44k"
+export GOOGLE_DEFAULT_CLIENT_ID="811574891467.apps.googleusercontent.com"
+export GOOGLE_DEFAULT_CLIENT_SECRET="kdloedMFGdGla2P1zacGjAQh"
+
+echo "Starting Chromium..."
+$BROWSER_PATH \
   --no-sandbox \
   --no-first-run \
   --disable-dev-shm-usage \
@@ -54,14 +63,7 @@ exec /usr/bin/google-chrome-stable \
   --lang=en-US \
   --disable-gpu \
   --enable-unsafe-webgpu \
-  $PROXY_ARG > /var/log/chrome.log 2> /var/log/chrome.err
+  $PROXY_ARG > /var/log/chrome.log 2> /var/log/chrome.err &
 
-
-# confirm we c
-
-
-# ideally we connect to the container and run the following command
-# ws://localhost:9222/devtools/browser/<id> 
-# get the id from 
-# http://localhost:9222/json/version webSocketDebuggerUrl
-
+# Keep container running by tailing the logs
+tail -f /var/log/chrome.log /var/log/chrome.err

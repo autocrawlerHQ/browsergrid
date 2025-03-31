@@ -9,9 +9,8 @@ COPY ./docker/browsermux/go.mod ./docker/browsermux/go.sum ./
 RUN go mod download
 
 # Copy the source code
-COPY ./docker/browsermux/cmd ./cmd
-COPY ./docker/browsermux/internal ./internal
-COPY ./docker/browsermux/pkg ./pkg
+COPY ./docker/browsermux/cmd/ ./cmd/
+COPY ./docker/browsermux/internal/ ./internal/
 
 # Build the application
 RUN CGO_ENABLED=0 GOOS=linux go build -o /browsermux ./cmd/browsermux/main.go

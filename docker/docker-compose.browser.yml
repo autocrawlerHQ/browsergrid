@@ -1,14 +1,14 @@
-name: browsergrid
+name: browsergrid-${SESSION_ID:-default}
 
 services:
   base:
     container_name: browsergrid-base
     image: browsergrid/base:latest
     build:
-      context: .
+      context: ..
       dockerfile: docker/browsers/base/Dockerfile
     env_file:
-      - .env
+      - ../.env
     ports:
       - "${VNC_PORT:-5900}:5900"
       - "${NOVNC_PORT:-6080}:6080"
@@ -18,7 +18,7 @@ services:
   browser:
     container_name: browsergrid-${BROWSER:-chrome}
     build:
-      context: .
+      context: ..
       dockerfile: docker/browsers/${BROWSER:-chrome}/Dockerfile
       args:
         BROWSER_VERSION: ${BROWSER_VERSION:-latest}
@@ -26,7 +26,7 @@ services:
     volumes:
       - /dev/shm:/dev/shm
     env_file:
-      - .env
+      - ../.env
     environment:
       - browsergrid_SESSION_ID=${SESSION_ID:-default}
       - ENABLE_VNC=${ENABLE_VNC:-true}
@@ -38,25 +38,19 @@ services:
       - "9222:9222"
     networks:
       - browsergrid
-    healthcheck:
-      test: ["CMD-SHELL", "pgrep ${BROWSER:-chrome} || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 3
       
   browsermux:
     container_name: browsergrid-browsermux
     build:
-      context: .
+      context: ..
       dockerfile: docker/browsermux/Dockerfile
     env_file:
-      - .env
+      - ../.env
     environment:
       - PORT=${BROWSERMUX_PORT:-8080}
       - BROWSER_URL=http://browser:9222
       - MAX_MESSAGE_SIZE=${MAX_MESSAGE_SIZE:-1048576}
       - CONNECTION_TIMEOUT_SECONDS=${CONNECTION_TIMEOUT_SECONDS:-10}
-
     ports:
       - "${BROWSERMUX_PORT:-8080}:8080"
     networks:
@@ -64,6 +58,25 @@ services:
     depends_on:
       browser:
         condition: service_healthy
+        
+  cua:
+    container_name: browsergrid-cua
+    build:
+      context: ..
+      dockerfile: docker/cua/Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      - PORT=${CUA_PORT:-3000}
+      - BROWSERMUX_URL=http://browsermux:${BROWSERMUX_PORT:-8080}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - NODE_ENV=${NODE_ENV:-production}
+    ports:
+      - "${CUA_PORT:-3000}:3000"
+    networks:
+      - browsergrid
+    depends_on:
+      - browsermux
 
 networks:
   browsergrid:

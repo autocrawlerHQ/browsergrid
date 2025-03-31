@@ -1,6 +1,8 @@
 // internal/api/server.go
 package api
 
+// TODO: reconnection is broken, we the browser disconnect/ shuts down, when we reconnect our user automation client hangs
+// TODO: need to fix this
 import (
 	"context"
 	"encoding/json"
@@ -16,8 +18,8 @@ import (
 
 	"browsermux/internal/api/middleware"
 	"browsermux/internal/browser"
+	"browsermux/internal/events"
 	"browsermux/internal/webhook"
-	"browsermux/pkg/events"
 )
 
 // Server is the API server

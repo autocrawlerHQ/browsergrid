@@ -21,6 +21,7 @@ ENV RESOLUTION_DEPTH=24
 ENV RESOLUTION=${RESOLUTION_WIDTH}x${RESOLUTION_HEIGHT}x${RESOLUTION_DEPTH}
 
 ENV REMOTE_DEBUGGING_PORT=61000
+ENV SW_SERVER_PORT=8082
 
 # TODO: USER DATA DIR and extensions should be custamizable
 
@@ -103,6 +104,8 @@ RUN chmod -R +x /opt/browsergrid/scripts/
 
 
 
+
+
 # supervisor
 COPY docker/browsers/base/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
@@ -119,16 +122,17 @@ WORKDIR ${HOME}
 
 # Set up nginx configuration
 RUN mkdir -p /etc/nginx/conf.d
-COPY docker/nginx/nginx.conf /etc/nginx/conf.d/default.conf
+COPY docker/browsers/base/nginx/nginx.conf /etc/nginx/conf.d/default.conf
 
 # Add nginx setup script
-COPY docker/nginx/setup_nginx.sh /usr/local/bin/
+COPY docker/browsers/base/nginx/setup_nginx.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/setup_nginx.sh
 
 
 EXPOSE 5900
 EXPOSE 6080
 EXPOSE 9222
+EXPOSE 8765
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 

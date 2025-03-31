@@ -1,7 +1,7 @@
 package browser
 
 import (
-	"browsermux/pkg/events"
+	"browsermux/internal/events"
 	"time"
 
 	"github.com/gorilla/websocket"

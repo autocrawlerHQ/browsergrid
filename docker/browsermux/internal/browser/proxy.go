@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
-	"browsermux/pkg/cdp"
-	"browsermux/pkg/events"
+	"browsermux/internal/cdp"
+	"browsermux/internal/events"
 )
 
 // Ensure CDPProxy implements all required interfaces
