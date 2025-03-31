@@ -20,7 +20,14 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
+  redis:
+    container_name: browsergrid-redis
+    image: redis:latest
+    ports:
+      - "${BROWSERGRID_REDIS_PORT:-6379}:6379"
+    networks:
+      - browsergrid_server  
+      
   server:
     container_name: browsergrid-server
     build:

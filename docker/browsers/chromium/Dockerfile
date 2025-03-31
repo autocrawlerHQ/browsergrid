@@ -1,8 +1,20 @@
 FROM browsergrid/base:latest
 
+LABEL org.opencontainers.image.description="Chromium browser for Browsergrid"
+LABEL org.opencontainers.image.version="${BROWSER_VERSION}"
+LABEL browsergrid.browser.version="${BROWSER_VERSION}"
+LABEL browsergrid.playwright.version="${PLAYWRIGHT_VERSION}"
 
-RUN npm i playwright
-RUN npx playwright install --with-deps chromium
+ARG PLAYWRIGHT_VERSION=latest
+ARG BROWSER_VERSION=latest
+
+RUN npm i playwright@${PLAYWRIGHT_VERSION}  
+
+if [ "${BROWSER_VERSION}" != "latest" ]; then
+    RUN npx playwright install --with-deps chromium@${BROWSER_VERSION}
+else
+    RUN npx playwright install --with-deps chromium
+fi
 
 
 COPY docker/browsers/chromium/start.sh /start.sh

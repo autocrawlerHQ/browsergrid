@@ -1,0 +1,2 @@
+#!/bin/bash
+pgrep firefox || exit 1 

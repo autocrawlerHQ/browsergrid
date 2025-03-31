@@ -1,0 +1,2 @@
+#!/bin/bash
+pgrep webkit || exit 1 
