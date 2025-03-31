@@ -1,0 +1,7 @@
+- write our system tests - core server frameowrk ex: db, migrations, app provisioning
+- write tests for our api
+- refactor client - removing and cli functionality 
+- build browser group 
+- create worker client, pool client, session instance client ( that actually communicates with our browser session ), webhook client that interacts with the instance
+- create cli and sdk from client code 
+- build 

@@ -1,0 +1,103 @@
+```mermaid
+graph TD
+    %% Main Components
+    Client[Client API] -->|Sends Session Request| API[Browsergrid Server API]
+    CLI[Command Line Tool] -->|Manages| API
+    
+    %% Server Components
+    subgraph "Browsergrid Server"
+        API -->|Routes Requests| Core[Core Module]
+        Core -->|Manages| DB[(Database)]
+        
+        %% Apps/Modules
+        Core -->|Uses| Sessions[Sessions App]
+        Core -->|Uses| Webhooks[Webhooks App]
+        Core -->|Uses| WorkerPool[WorkerPool App]
+        
+        %% Work Pool Management
+        Sessions -->|Creates| SessionRequest[Session Request]
+        SessionRequest -->|Assigned to| Pool[Work Pool]
+    end
+    
+    %% Work Pool and Worker Flow
+    subgraph "Infrastructure Layer"
+        Pool -->|Makes Available| PendingSession[Pending Session]
+        Worker[Worker] -->|Polls for| PendingSession
+        Worker -->|Claims| PendingSession
+        
+        %% Provider-specific Deployment
+        Worker -->|Deploys via| Providers{Provider Type}
+        Providers -->|Docker| DockerHost[Docker Host]
+        Providers -->|Azure Container Instance| AzureCI[Azure Container Instance]
+        Providers -->|Future Providers| FutureProviders[Other Providers]
+        
+        %% Session Lifecycle
+        DockerHost -->|Runs| BrowserContainer1[Browser Container]
+        AzureCI -->|Runs| BrowserContainer2[Browser Container]
+        FutureProviders -->|Runs| BrowserContainer3[Browser Container]
+        
+        Worker -->|Tracks Status of| BrowserSession[Browser Session]
+        Worker -->|Reports Status to| API
+    end
+    
+    %% Session Usage
+    BrowserSession -->|Available for| EndUser[End User]
+
+```
+
+```mermaid
+classDiagram
+    class WorkPool {
+        +String id
+        +String name
+        +String provider_type
+        +Dict config
+        +List browser_defaults
+    }
+    
+    class Worker {
+        +String id
+        +String name
+        +String work_pool_id
+        +Int capacity
+        +DateTime last_heartbeat
+        +track_session()
+        +claim_session()
+        +report_status()
+    }
+    
+    class Session {
+        +String id
+        +String browser
+        +String version
+        +Boolean headless
+        +Dict resource_limits
+        +String status
+        +String work_pool_id
+        +String worker_id
+    }
+    
+    WorkPool "1" --> "*" Worker : has
+    Worker "1" --> "*" Session : manages
+    WorkPool "1" --> "*" Session : hosts
+```
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant A as API
+    participant P as WorkPool
+    participant W as Worker
+    participant I as Infrastructure
+    
+    C->>A: Create Session Request
+    A->>P: Assign to Work Pool
+    W->>P: Poll for Pending Sessions
+    P->>W: Return Pending Session
+    W->>A: Claim Session
+    W->>I: Deploy Browser Container
+    I->>W: Container Started
+    W->>A: Update Session Status (Running)
+    C->>A: Get Session Details
+    A->>C: Return Connection Info
+``` 
