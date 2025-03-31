@@ -2,15 +2,19 @@
 
 ## Overview
 
-Browserfleet follows a modified semantic versioning (SemVer) approach with a 0.x.y format:
+Browserfleet follows a ZeroVer approach with a 0.x.y (for decent reasoning):
 
-- **Major version**: Fixed at 0 during initial development
+- **Major version**: Fixed at 0 
 - **Minor version (x)**: 
   - Regular minor bumps: 1-99
   - Major bumps: encoded as 100*n + minor (e.g., 102 = major 1, minor 2)
 - **Patch version (y)**: Increments for bug fixes and non-breaking improvements
 
-This approach helps maintain a clear development history while acknowledging the pre-1.0 status of the project.
+
+## Why?
+This project provides a minimal API surface, allowing us to prioritize infrastructure stability over safe interfaces.
+Semantic versioning implementations and pipelines create silos when major versions increment, causing older versions to stop receiving critical infrastructure updates. By maintaining a consistent major version, our approach ensures regardless of when you wrote your code, you are able to receive the latest browser updates.
+
 
 ## Version Numbering Rules
 
