@@ -80,4 +80,4 @@ services:
 
 networks:
   browsergrid:
-    name: src.${SESSION_ID:-default} 
+    name: browsergrid
