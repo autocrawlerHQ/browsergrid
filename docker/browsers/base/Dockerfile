@@ -1,6 +1,6 @@
 FROM ubuntu:22.04
 
-LABEL org.opencontainers.image.source="https://github.com/autocrawler/browsergrid"
+LABEL org.opencontainers.image.source="https://github.com/autocrawlerHQ/browsergrid"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
