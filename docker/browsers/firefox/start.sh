@@ -23,18 +23,14 @@ EOL
 # Find the Firefox executable path
 FIREFOX_PATH=$(find /root/.cache/ms-playwright -name "firefox" -type f -executable 2>/dev/null | head -n 1)
 
-# Check for headless mode
-FIREFOX_ARGS=""
-if [ "${HEADLESS:-false}" = "true" ]; then
-  FIREFOX_ARGS="-headless"
-fi
+
 
 # Start Firefox with remote debugging enabled
 ${FIREFOX_PATH} \
   --no-remote \
   --profile /home/user/firefox-profile \
   --start-debugger-server 9222 \
-  ${FIREFOX_ARGS} \
+  --display=${DISPLAY} \
   about:blank &
 
 # Keep container running
