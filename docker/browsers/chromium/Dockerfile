@@ -10,11 +10,9 @@ ARG BROWSER_VERSION=latest
 
 RUN npm i playwright@${PLAYWRIGHT_VERSION}  
 
-if [ "${BROWSER_VERSION}" != "latest" ]; then
-    RUN npx playwright install --with-deps chromium@${BROWSER_VERSION}
-else
-    RUN npx playwright install --with-deps chromium
-fi
+
+RUN npx playwright install --with-deps chromium
+
 
 
 COPY docker/browsers/chromium/start.sh /start.sh

@@ -11,7 +11,8 @@ ARG BROWSER_VERSION=latest
 
 RUN npm i playwright@${PLAYWRIGHT_VERSION}
 
-RUN npx playwright install --with-deps chrome@${BROWSER_VERSION}
+RUN npx playwright install --with-deps chrome
+
 
 
 COPY docker/browsers/chrome/start.sh /start.sh

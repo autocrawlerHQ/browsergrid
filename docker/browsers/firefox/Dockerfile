@@ -11,11 +11,9 @@ ARG BROWSER_VERSION=latest
 
 RUN npm i playwright@${PLAYWRIGHT_VERSION}
 
-if [ "${BROWSER_VERSION}" != "latest" ]; then
-    RUN npx playwright install --with-deps firefox@${BROWSER_VERSION}
-else
-    RUN npx playwright install --with-deps firefox
-fi
+
+RUN npx playwright install --with-deps firefox
+
 
 
 COPY docker/browsers/firefox/start.sh /start.sh
