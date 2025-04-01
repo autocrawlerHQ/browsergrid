@@ -7,7 +7,9 @@
     "start": "ts-node src/server.ts",
     "dev": "nodemon src/server.ts",
     "build": "tsc",
-    "serve": "node dist/server.js"
+    "serve": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/**/*.ts"
   },
   "keywords": [],
   "author": "",
@@ -26,6 +28,7 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "openai": "^4.90.0",
+    "playwright": "^1.51.1",
     "socket.io": "^4.8.1",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7",
