@@ -5,6 +5,8 @@
 # and managing Docker services for both server and browser
 # environments.
 
+# NOTE: This does not work in windows, use WSL if possible.
+
 # ======================================================
 # Default settings
 # ======================================================
@@ -21,7 +23,7 @@ BROWSER_FILES := -f docker/docker-compose.browser.yml
 # ======================================================
 # Docker command
 # ======================================================
-DOCKER_COMPOSE_COMMAND = docker compose
+DOCKER_COMPOSE_COMMAND = $(shell if docker compose version > /dev/null 2>&1; then echo "docker compose"; else echo "docker-compose"; fi)
 
 # ======================================================
 # Utility functions
@@ -58,6 +60,11 @@ help:
 	@echo ""
 	@echo "Browser-specific commands:"
 	@echo "  make shell                Open shell in browser container"
+	@echo ""
+	@echo "Example:"
+	@echo "  make browser"
+	@echo "  make browser build"
+	@echo "  make browser BROWSER=chromium up"
 	@echo ""
 	@echo "Current configuration:"
 	@echo "  Environment: $(ENVIRONMENT)"
@@ -229,8 +236,6 @@ stop:
 		echo "Run 'make server' first, then 'make stop'"; \
 		exit 1; \
 	fi
-
-
 
 # Set default target to help
 .DEFAULT_GOAL := help
