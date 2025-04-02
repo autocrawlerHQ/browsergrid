@@ -1,45 +1,46 @@
-- write our system tests - core server frameowrk ex: db, migrations, app provisioning
-- write tests for our api
-- refactor client - removing and cli functionality 
-- build browser group 
-- create worker client, pool client, session instance client ( that actually communicates with our browser session ), webhook client that interacts with the instance
-- create cli and sdk from client code 
+# BrowserGrid Development Tasks
 
+## Testing
+- Write system tests for core server framework (DB, migrations, app provisioning)
+- Write API tests
+- Write browser tests
+- Add automated readme badges based on test results
 
-- add ui ( use components from autocrawler console)
-  - pages
-    - session list
-    - session details with chat interface ( cua endpoint )
-    - profile list
-    - profile details
-    - workpool list
-    - workpool details
-    - worker list
-    - worker details
-    - webhook list
-    - webhook details
-    - webhook create
-    - webhook edit
-    - webhook delete
-    - deployment list
-    - deployment details
-    - deployment create
-    - deployment edit
-    - deployment delete
-    
-- add deployments (package code to run along browser instance)
+## Client Development
+- Refactor client by removing CLI functionality
+- Create specialized clients:
+  - Worker client
+  - Pool client
+  - Session instance client (for browser session communication)
+  - Webhook client
+- Build browser group functionality
+- Create CLI and SDK from client code
 
-- link server api and browser instance api. we implemented a server webhook api for defining webhooks and implemented the webhook api in the browser instance. that sends cdp events to set webhooks. 
+## UI Development
+- Add UI using components from AutoCrawler console repo
+  - Session management (list, details with chat interface)
+  - Profile management (list, details)
+  - Work pool management (list, details)
+  - Worker management (list, details)
+  - Webhook management (list, details, CRUD operations)
+  - Deployment management (list, details, CRUD operations)
 
-- figure out tagging, semver, and releases. we will only do this for our server, worker, and client. but we will have multiple clients for different languages.  
+## API Integration
+- Link server API and browser instance API
+- Integrate webhook API between server and browser instance
 
+## Deployment System
+- Add deployments to package code that runs with browser instances ( or separately, not sure yet )
 
-- write browser tests
-- add readme badges, automated based on test results 
-- profiles aka persistent user data dirs
-  - these will allow users to define their own profiles in our server and some how we will create a volume for the browser instance to use. managed by our server. 
-  - this is hard due to the integrations, we need to support docker, kubernetes, azure container instances, aws, gcp etc. we need to also support multiple browser types and versions. 
-  -lots can go wrong here, we need to think about this carefully.   
-  - all these systems handle volumes differently, so we need to find a way to abstract this. 
-  - the solution must support multiple profiles per instance.  and allow multiple instances to share the same profile.  
-  - there may need to be trade offs if multiple instances use the same profile at the same time.
+## Version Management
+- Implement tagging, semantic versioning, and releases
+- Support multiple clients across different languages
+
+## Profile Management
+- Implement persistent user data directories
+- Design volume management across different platforms:
+  - Docker, Kubernetes, cloud providers (Azure, AWS, GCP)
+  - Support for multiple browser types and versions
+- Enable multiple profiles per instance
+- Allow profile sharing between instances
+- Address concurrency issues with shared profiles
