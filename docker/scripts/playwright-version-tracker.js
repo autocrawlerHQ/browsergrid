@@ -20,6 +20,92 @@ function getPlaywrightVersion() {
 }
 
 /**
+ * Get the version for a single browser
+ * @param {string} browserName - The browser name (chrome, chromium, firefox, webkit)
+ * @returns {Promise<string>} The browser version
+ */
+async function getSingleBrowserVersion(browserName) {
+  // Create a temporary directory
+  const tempDir = path.join(__dirname, 'temp-browser-check');
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir);
+  }
+
+  try {
+    // Create a temporary package.json
+    fs.writeFileSync(
+      path.join(tempDir, 'package.json'),
+      JSON.stringify({
+        dependencies: {
+          playwright: 'latest'
+        }
+      })
+    );
+
+    // Install Playwright
+    execSync('npm install', { cwd: tempDir });
+
+    // Create a script to get browser version
+    const scriptPath = path.join(tempDir, 'get-version.js');
+    fs.writeFileSync(
+      scriptPath,
+      `
+      const { chromium, firefox, webkit } = require('playwright');
+      
+      async function getBrowserVersion() {
+        const browserName = '${browserName}';
+        let browser;
+        let version;
+        
+        try {
+          switch(browserName) {
+            case 'chrome':
+            case 'chromium':
+              browser = await chromium.launch();
+              break;
+            case 'firefox':
+              browser = await firefox.launch();
+              break;
+            case 'webkit':
+              browser = await webkit.launch();
+              break;
+          }
+          
+          version = await browser.version();
+          await browser.close();
+          
+          // Extract major.minor.patch version
+          const versionMatch = version.match(/(\\d+\\.\\d+\\.\\d+)/);
+          if (versionMatch) {
+            console.log(versionMatch[1]);
+            return;
+          }
+          
+          // Fallback: just print the full version
+          console.log(version);
+        } catch(e) {
+          console.error(e);
+          process.exit(1);
+        }
+      }
+      
+      getBrowserVersion();
+      `
+    );
+
+    // Run the script
+    const output = execSync(`node ${scriptPath}`).toString().trim();
+    return output;
+  } catch (error) {
+    console.error(`Error getting ${browserName} version:`, error);
+    return 'unknown';
+  } finally {
+    // Clean up
+    execSync(`rm -rf ${tempDir}`);
+  }
+}
+
+/**
  * Get the current browser versions from Playwright
  * @param {string} playwrightVersion - The Playwright version to use
  * @returns {Object} Object containing browser versions
@@ -90,7 +176,7 @@ async function getBrowserVersions(playwrightVersion) {
         
         // Format versions to just major.minor.patch
         Object.keys(versions).forEach(browser => {
-          const match = versions[browser].match(/(\d+\.\d+\.\d+)/);
+          const match = versions[browser].match(/(\\d+\\.\\d+\\.\\d+)/);
           if (match) {
             versions[browser] = match[1];
           }
@@ -166,6 +252,22 @@ function checkForChanges(currentManifest, playwrightVersion, browserVersions) {
 }
 
 /**
+ * Check if a browser version exists in the container registry
+ * @param {string} browser - The browser name
+ * @param {string} version - The browser version
+ * @returns {boolean} True if the version exists, false otherwise
+ */
+function checkVersionExists(browser, version) {
+  try {
+    // The command assumes proper authentication to the registry
+    const result = execSync(`curl -s "https://autobrowser.azurecr.io/v2/browsergrid/${browser}/tags/list" | grep -q "\\\"${version}\\\""`, { stdio: 'pipe' });
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
  * Main function
  */
 async function main() {
@@ -200,15 +302,76 @@ async function main() {
   };
 }
 
+/**
+ * Parse command line arguments and run the appropriate function
+ */
+async function handleCommandLineArguments() {
+  const args = process.argv.slice(2);
+  
+  if (args.includes('--get-playwright-version')) {
+    // Get and print the Playwright version
+    console.log(getPlaywrightVersion());
+    return;
+  }
+  
+  if (args.includes('--get-single-browser-version')) {
+    const browserIndex = args.indexOf('--get-single-browser-version') + 1;
+    if (browserIndex < args.length) {
+      const browserName = args[browserIndex];
+      const version = await getSingleBrowserVersion(browserName);
+      console.log(version);
+    } else {
+      console.error('Error: No browser name provided');
+      process.exit(1);
+    }
+    return;
+  }
+  
+  if (args.includes('--check-version-exists')) {
+    const browserIndex = args.indexOf('--check-version-exists') + 1;
+    const versionIndex = browserIndex + 1;
+    
+    if (browserIndex < args.length && versionIndex < args.length) {
+      const browser = args[browserIndex];
+      const version = args[versionIndex];
+      const exists = checkVersionExists(browser, version);
+      console.log(exists ? 'true' : 'false');
+    } else {
+      console.error('Error: Missing browser or version parameter');
+      process.exit(1);
+    }
+    return;
+  }
+  
+  // If no arguments or --help, run the default main function
+  if (args.length === 0 || args.includes('--help')) {
+    console.log(`
+Usage: node version-tracker.js [OPTION]
+
+Options:
+  --get-playwright-version                Get the latest Playwright version
+  --get-single-browser-version BROWSER    Get the version for a single browser (chrome, chromium, firefox, webkit)
+  --check-version-exists BROWSER VERSION  Check if a browser version exists in the container registry
+  --help                                  Display this help message
+    `);
+    return;
+  }
+  
+  // If no recognized arguments, run the main function
+  await main();
+}
+
 if (require.main === module) {
-  main().catch(console.error);
+  handleCommandLineArguments().catch(console.error);
 }
 
 module.exports = {
   getPlaywrightVersion,
+  getSingleBrowserVersion,
   getBrowserVersions,
   loadManifest,
   saveManifest,
   checkForChanges,
+  checkVersionExists,
   main
 };
