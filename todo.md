@@ -34,10 +34,10 @@
 - [ ] Integrate webhook API between server and browser instance
 
 ## Worker Integrations
-- [ ] local worker
-- [ ] docker worker
+- [x] local worker
+- [x] docker worker
 - [ ] kubernetes worker ( support both spot and on-demand )
-- [ ] azure container instance worker
+- [x] azure container instance worker
 - [ ] gcp cloud function worker
 - [ ] aws ecs worker
 
