@@ -6,7 +6,7 @@
 - [ ] Write browser tests
 - [ ] Add automated readme badges based on test results
 
-## Client Development
+## Client Development & Connection System
 - [ ] Refactor client by removing CLI functionality
 - [ ] Create specialized clients:
   - [ ] Worker client
@@ -21,6 +21,13 @@
   - [ ] Go
   - [ ] Java
   - [ ] C#
+- [ ] Implement quick connect endpoint (e.g., `playwright.connect_over_cdp("connect.browsergrid.io")`)
+  - [ ] Support ephemeral sessions that live only as long as the connection
+  - [ ] Handle connection timeouts and reconnection logic
+- [ ] Develop SDK-based connection system
+  - [ ] Allow users to create and acquire persistent sessions
+  - [ ] Support session management (pause, resume, transfer)
+  - [ ] Implement session state persistence
 
 ## UI Development
 - [ ] Add UI using components from AutoCrawler console repo
