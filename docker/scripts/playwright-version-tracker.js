@@ -6,6 +6,9 @@ const { execSync } = require('child_process');
 // Path to version manifest
 const MANIFEST_PATH = path.join(__dirname, 'browser_versions.json');
 
+// Default registry organization
+const DEFAULT_REGISTRY = 'browsergrid';
+
 /**
  * Get the latest Playwright version
  * @returns {string} The latest Playwright version
@@ -252,15 +255,16 @@ function checkForChanges(currentManifest, playwrightVersion, browserVersions) {
 }
 
 /**
- * Check if a browser version exists in the container registry
+ * Check if a browser version exists in Docker Hub
  * @param {string} browser - The browser name
  * @param {string} version - The browser version
+ * @param {string} registryOrg - The registry organization (default: browsergrid)
  * @returns {boolean} True if the version exists, false otherwise
  */
-function checkVersionExists(browser, version) {
+function checkVersionExists(browser, version, registryOrg = DEFAULT_REGISTRY) {
   try {
-    // The command assumes proper authentication to the registry
-    const result = execSync(`curl -s "https://autobrowser.azurecr.io/v2/browsergrid/${browser}/tags/list" | grep -q "\\\"${version}\\\""`, { stdio: 'pipe' });
+    // Docker Hub API v2 call to check if tag exists
+    const result = execSync(`curl -s "https://hub.docker.com/v2/repositories/${registryOrg}/${browser}/tags/${version}" | grep -q "\\\"name\\\""`, { stdio: 'pipe' });
     return true;
   } catch (error) {
     return false;
@@ -330,11 +334,13 @@ async function handleCommandLineArguments() {
   if (args.includes('--check-version-exists')) {
     const browserIndex = args.indexOf('--check-version-exists') + 1;
     const versionIndex = browserIndex + 1;
+    const registryIndex = versionIndex + 1;
     
     if (browserIndex < args.length && versionIndex < args.length) {
       const browser = args[browserIndex];
       const version = args[versionIndex];
-      const exists = checkVersionExists(browser, version);
+      const registryOrg = registryIndex < args.length ? args[registryIndex] : DEFAULT_REGISTRY;
+      const exists = checkVersionExists(browser, version, registryOrg);
       console.log(exists ? 'true' : 'false');
     } else {
       console.error('Error: Missing browser or version parameter');
@@ -351,7 +357,7 @@ Usage: node version-tracker.js [OPTION]
 Options:
   --get-playwright-version                Get the latest Playwright version
   --get-single-browser-version BROWSER    Get the version for a single browser (chrome, chromium, firefox, webkit)
-  --check-version-exists BROWSER VERSION  Check if a browser version exists in the container registry
+  --check-version-exists BROWSER VERSION [REGISTRY]  Check if a browser version exists in Docker Hub
   --help                                  Display this help message
     `);
     return;
