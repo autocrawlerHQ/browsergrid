@@ -29,6 +29,10 @@
   - [ ] Support session management (pause, resume, transfer)
   - [ ] Implement session state persistence
 
+## API Integration
+- [ ] Link server API and browser instance API
+- [ ] Integrate webhook API between server and browser instance
+
 ## UI Development
 - [ ] Add UI using components from AutoCrawler console repo
   - [ ] Session management (list, details with chat interface)
@@ -39,12 +43,17 @@
   - [ ] Deployment management (list, details, CRUD operations (deployment runs with browser instance)   )
   - [ ] Observability for sessions, deployments, workpools, workers  (metrics, logs, traces)
 
-## API Integration
-- [ ] Link server API and browser instance API
-- [ ] Integrate webhook API between server and browser instance
+## Documentation
+- [ ] Create comprehensive API documentation
+- [ ] Write user guides for each client SDK
+- [ ] Develop installation and deployment guides
+- [ ] Create browser compatibility matrix documentation
+- [ ] Document version upgrade paths
+- [ ] Create architecture diagrams and system design documentation
+- [ ] Document browser version tracking and management process
+- [ ] Create troubleshooting guides and FAQs
+- [ ] Add Issue templates for bugs, feature requests, and documentation updates 
 
-## Deployment System
-- [ ] Add deployments to package code that runs with browser instances ( or separately, not sure yet )
 
 ## Version Management
 - [ ] Implement tagging, semantic versioning, and releases
@@ -59,16 +68,10 @@
 - [ ] Allow profile sharing between instances
 - [ ] Address concurrency issues with shared profiles
 
-## Documentation
-- [ ] Create comprehensive API documentation
-- [ ] Write user guides for each client SDK
-- [ ] Develop installation and deployment guides
-- [ ] Create browser compatibility matrix documentation
-- [ ] Document version upgrade paths
-- [ ] Create architecture diagrams and system design documentation
-- [ ] Document browser version tracking and management process
-- [ ] Create troubleshooting guides and FAQs
-- [ ] Add Issue templates for bugs, feature requests, and documentation updates 
+
+## Deployment System
+- [ ] Add deployments to package code that runs with browser instances ( or separately, not sure yet )
+
 
 ## Security
 - [ ] Implement secure authentication and authorization mechanisms
