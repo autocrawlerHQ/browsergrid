@@ -1,8 +1,13 @@
 #!/bin/bash
 set -e
 
-rm -f /tmp/.X0-lock
+# Create log directory with proper permissions if it doesn't exist
+if [ ! -d "/var/log" ] || [ ! -w "/var/log" ]; then
+  sudo mkdir -p /var/log
+  sudo chmod 777 /var/log
+fi
 
+rm -f /tmp/.X0-lock
 
 until xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; do
   echo "Waiting for X server on $DISPLAY..."
@@ -10,15 +15,23 @@ until xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; do
 done
 
 
+
+if [ ! -d "${HOME}/data-dir" ]; then
+  echo "Creating Chrome data directory"
+  mkdir -p ${HOME}/data-dir
+  chmod 755 ${HOME}/data-dir
+else
+  echo "Chrome data directory exists, ensuring correct permissions"
+  chmod 755 ${HOME}/data-dir
+fi
+
 PROXY_ARG=""
 if [ -n "$PROXY_SERVER" ]; then
   echo "Using proxy server: $PROXY_SERVER"
   PROXY_ARG="--proxy-server=$PROXY_SERVER"
 fi
 
-
-
-echo "Starting Chrome..."
+echo "Starting Chrome with data directory: ${HOME}/data-dir"
 exec /usr/bin/google-chrome-stable \
   --no-sandbox \
   --no-first-run \

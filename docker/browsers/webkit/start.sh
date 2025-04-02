@@ -1,12 +1,25 @@
 #!/bin/bash
 set -e
 
+# Create log directory with proper permissions if it doesn't exist
+if [ ! -d "/var/log" ] || [ ! -w "/var/log" ]; then
+  sudo mkdir -p /var/log
+  sudo chmod 777 /var/log
+fi
+
 rm -f /tmp/.X0-lock
 
 until xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; do
   echo "Waiting for X server on $DISPLAY..."
   sleep 0.1
 done
+
+# Debug: Check home directory and data directory permissions
+echo "Home directory permissions:"
+ls -la ${HOME}
+echo "Current user: $(whoami)"
+echo "UID: $(id -u)"
+echo "GID: $(id -g)"
 
 PROXY_ARG=""
 if [ -n "$PROXY_SERVER" ]; then
@@ -22,10 +35,18 @@ if [ -z "$WEBKIT_PATH" ]; then
 fi
 BROWSER_PATH="${WEBKIT_PATH}/minibrowser-gtk"
 
-# Make a local directory for WebKit data
-mkdir -p ${HOME}/webkit-data
+# Make a local directory for WebKit data with proper permissions
+if [ ! -d "${HOME}/webkit-data" ]; then
+  echo "Creating WebKit data directory"
+  mkdir -p ${HOME}/webkit-data
+  chmod 755 ${HOME}/webkit-data
+else
+  echo "WebKit data directory exists, ensuring correct permissions"
+  chmod 755 ${HOME}/webkit-data
+fi
 
 # Create a WebKit to CDP proxy service
+echo "Creating WebKit proxy script"
 cat > ${HOME}/webkit-proxy.js << EOL
 const http = require('http');
 const WebSocket = require('ws');

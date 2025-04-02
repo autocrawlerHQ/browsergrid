@@ -20,6 +20,10 @@ ENV RESOLUTION_DEPTH=24
 
 ENV RESOLUTION=${RESOLUTION_WIDTH}x${RESOLUTION_HEIGHT}x${RESOLUTION_DEPTH}
 
+# Set static UID and GID for the browser user
+ENV UID=1000
+ENV GID=1000
+
 ENV REMOTE_DEBUGGING_PORT=61000
 ENV SW_SERVER_PORT=8082
 
@@ -96,11 +100,23 @@ RUN ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime && \
     dpkg-reconfigure -f noninteractive tzdata
 
 
+
 # Create startup scripts
 RUN mkdir -p /opt/browsergrid/scripts
+
+# Create non-root user with static UID/GID
+RUN groupadd -g ${GID} browseruser && \
+    useradd -u ${UID} -g ${GID} -s /bin/bash -m -d ${HOME} browseruser
+
 RUN chmod -R +x /opt/browsergrid/scripts/
-#COPY docker/browsers/base/scripts/ /opt/browsergrid/scripts/
-# RUN chown -R user:user /opt/browsergrid
+COPY docker/scripts/ /opt/browsergrid/scripts/
+
+# Set proper permissions for directories that need to be accessed by the non-root user
+RUN mkdir -p ${HOME}/.cache && \
+    mkdir -p ${HOME}/.config && \
+    chown -R browseruser:browseruser /opt/browsergrid && \
+    chown -R browseruser:browseruser ${HOME} && \
+    chmod -R 755 ${HOME}
 
 
 
@@ -114,12 +130,6 @@ COPY docker/browsers/base/supervisord.conf /etc/supervisor/conf.d/supervisord.co
 COPY docker/browsers/base/entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-
-
-# USER user  # Commenting out this line to run entrypoint as root
-WORKDIR ${HOME}
-
-
 # Set up nginx configuration
 RUN mkdir -p /etc/nginx/conf.d
 COPY docker/browsers/base/nginx/nginx.conf /etc/nginx/conf.d/default.conf
@@ -128,6 +138,10 @@ COPY docker/browsers/base/nginx/nginx.conf /etc/nginx/conf.d/default.conf
 COPY docker/browsers/base/nginx/setup_nginx.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/setup_nginx.sh
 
+# We will keep running as root for the entrypoint
+# because Xvfb and x11vnc need root permissions
+# Individual browser processes will be run as browseruser
+WORKDIR ${HOME}
 
 EXPOSE 5900
 EXPOSE 6080

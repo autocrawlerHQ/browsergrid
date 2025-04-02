@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+# Create log directory with proper permissions if it doesn't exist
+if [ ! -d "/var/log" ] || [ ! -w "/var/log" ]; then
+  sudo mkdir -p /var/log
+  sudo chmod 777 /var/log
+fi
+
 rm -f /tmp/.X0-lock
 
 until xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; do
@@ -8,71 +14,79 @@ until xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; do
   sleep 0.1
 done
 
-# Create Firefox profile directory if it doesn't exist
-mkdir -p ${HOME}/firefox-profile
 
-# Configure Firefox for remote debugging
-cat > ${HOME}/firefox-profile/user.js << EOL
-user_pref("devtools.debugger.remote-enabled", true);
-user_pref("devtools.chrome.enabled", true);
-user_pref("devtools.debugger.prompt-connection", false);
-user_pref("browser.dom.window.dump.enabled", true);
-user_pref("network.websocket.allowInsecureFromHTTPS", true);
-user_pref("devtools.debugger.force-local", false);
-user_pref("devtools.debugger.remote.port", ${REMOTE_DEBUGGING_PORT:-9222});
-EOL
+
+if [ ! -d "${HOME}/data-dir" ]; then
+  echo "Creating Chromium data directory"
+  mkdir -p ${HOME}/data-dir
+  chmod 755 ${HOME}/data-dir
+else
+  echo "Chromium data directory exists, ensuring correct permissions"
+  chmod 755 ${HOME}/data-dir
+fi
 
 PROXY_ARG=""
 if [ -n "$PROXY_SERVER" ]; then
   echo "Using proxy server: $PROXY_SERVER"
-  cat >> ${HOME}/firefox-profile/user.js << EOL
-user_pref("network.proxy.type", 1);
-user_pref("network.proxy.http", "${PROXY_SERVER%:*}");
-user_pref("network.proxy.http_port", ${PROXY_SERVER##*:});
-user_pref("network.proxy.ssl", "${PROXY_SERVER%:*}");
-user_pref("network.proxy.ssl_port", ${PROXY_SERVER##*:});
-EOL
+  PROXY_ARG="--proxy-server=$PROXY_SERVER"
 fi
 
-# Find the Playwright Firefox executable
-BROWSER_PATH=$(find ${HOME}/.cache/ms-playwright -name "firefox" -type f -executable | head -1)
+# Find the Playwright Chromium executable
+BROWSER_PATH=$(find /home/user/.cache/ms-playwright -path "*/chrome-linux/chrome" -type f -executable | head -1)
 
 if [ -z "$BROWSER_PATH" ]; then
-  echo "Playwright Firefox not found, falling back to system Firefox"
-  BROWSER_PATH="/usr/bin/firefox"
+  echo "Playwright Chromium not found, falling back to system Chrome"
+  BROWSER_PATH="/usr/bin/chromium-browser"
 fi
 
-echo "Starting Firefox..."
+export GOOGLE_API_KEY="AIzaSyCkfPOPZXDKNn8hhgu3JrA62wIgC93d44k"
+export GOOGLE_DEFAULT_CLIENT_ID="811574891467.apps.googleusercontent.com"
+export GOOGLE_DEFAULT_CLIENT_SECRET="kdloedMFGdGla2P1zacGjAQh"
+
+echo "Starting Chromium with data directory: ${HOME}/data-dir"
+echo "Browser path: ${BROWSER_PATH}"
+
 $BROWSER_PATH \
-  --no-remote \
-  --profile ${HOME}/firefox-profile \
-  --window-size=${RESOLUTION_WIDTH},${RESOLUTION_HEIGHT} \
-  --start-debugger-server=0.0.0.0:${REMOTE_DEBUGGING_PORT:-9222} \
-  --recording-output ${HOME}/firefox-media \
-  --first-startup \
-  --allow-downgrade \
+  --no-sandbox \
+  --no-first-run \
+  --disable-dev-shm-usage \
+  --disable-component-update \
+  --no-service-autorun \
+  --password-store=basic \
   --disable-backgrounding-occluded-windows \
+  --disable-renderer-backgrounding \
   --disable-background-timer-throttling \
   --disable-background-networking \
-  --disable-breakpad \
-  --disable-component-update \
-  --disable-crash-reporter \
-  --disable-dev-shm-usage \
-  --disable-hang-monitor \
+  --no-pings \
   --disable-infobars \
-  --disable-popup-blocking \
-  --disable-prompt-on-repost \
-  --disable-renderer-backgrounding \
-  --disable-session-crashed-bubble \
-  --disable-sync \
+  --disable-breakpad \
   --no-default-browser-check \
-  --no-first-run \
-  --no-service-autorun \
+  --remote-debugging-address=0.0.0.0 \
+  --remote-debugging-port=${REMOTE_DEBUGGING_PORT} \
   --remote-allow-origins=* \
+  --window-size=${RESOLUTION_WIDTH},${RESOLUTION_HEIGHT} \
+  --user-data-dir=${HOME}/data-dir \
+  --allow-insecure-localhost \
+  --disable-blink-features=AutomationControlled \
+  --flag-switches-begin \
+  --flag-switches-end \
+  --force-color-profile=srgb \
+  --metrics-recording-only \
+  --use-mock-keychain \
+  --disable-background-mode \
+  --enable-features=NetworkService,NetworkServiceInProcess,LoadCryptoTokenExtension,PermuteTLSExtensions \
+  --disable-features=FlashDeprecationWarning,EnablePasswordsAccountStorage \
   --deny-permission-prompts \
   --accept-lang=en-US \
   --lang=en-US \
-  about:blank > /var/log/firefox.log 2> /var/log/firefox.err &
+  --disable-gpu \
+  --enable-unsafe-webgpu \
+  $PROXY_ARG > /var/log/chrome.log 2> /var/log/chrome.err &
+
+sleep 2
+
+echo "Chromium process started, checking logs:"
+head -20 /var/log/chrome.err
 
 # Keep container running by tailing the logs
-tail -f /var/log/firefox.log /var/log/firefox.err
+tail -f /var/log/chrome.log /var/log/chrome.err

@@ -1,4 +1,4 @@
-name: browsergrid-${SESSION_ID:-default}
+name: browsergrid
 
 services:
   base:
@@ -17,6 +17,7 @@ services:
       
   browser:
     container_name: browsergrid-${BROWSER:-chrome}
+    image: browsergrid/${BROWSER:-chrome}:${BROWSER_VERSION:-latest}
     build:
       context: ..
       dockerfile: docker/browsers/${BROWSER:-chrome}/Dockerfile
@@ -28,7 +29,7 @@ services:
     env_file:
       - ../.env
     environment:
-      - browsergrid_SESSION_ID=${SESSION_ID:-default}
+      - BROWSERGRID_SESSION_ID=${SESSION_ID:-default}
       - ENABLE_VNC=${ENABLE_VNC:-true}
       - RESOLUTION=${RESOLUTION:-1920x1080x24}
       - HEADLESS=${HEADLESS:-false}
