@@ -31,10 +31,10 @@
 
 - link server api and browser instance api. we implemented a server webhook api for defining webhooks and implemented the webhook api in the browser instance. that sends cdp events to set webhooks. 
 
--figure out tagging, semver, and releases. we will only do this for our server, worker, and client. but we will have multiple clients for different languages.  
+- figure out tagging, semver, and releases. we will only do this for our server, worker, and client. but we will have multiple clients for different languages.  
 
 
--write browser tests
+- write browser tests
 - add readme badges, automated based on test results 
 - profiles aka persistent user data dirs
   - these will allow users to define their own profiles in our server and some how we will create a volume for the browser instance to use. managed by our server. 
