@@ -98,7 +98,9 @@ fi
 mkdir -p ${HOME}/firefox-media
 chmod 755 ${HOME}/firefox-media
 
-echo "Starting Firefox with profile: ${PROFILE_PATH}"
+BROWSER_VERSION=$(node /opt/browsergrid/scripts/playwright-version-tracker.js --get-single-browser-version firefox)
+
+echo "Starting Firefox ${BROWSER_VERSION} with profile: ${PROFILE_PATH}"
 echo "Browser path: ${BROWSER_PATH}"
 
 $BROWSER_PATH \

@@ -8,7 +8,7 @@ LABEL browsergrid.playwright.version="${PLAYWRIGHT_VERSION}"
 ARG PLAYWRIGHT_VERSION=latest
 ARG BROWSER_VERSION=latest
 
-RUN apt-get update && apt-get install -y sudo && \
+RUN apt-get update && apt-get install -y sudo curl jq && \
     echo "browseruser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers && \
     rm -rf /var/lib/apt/lists/*
 

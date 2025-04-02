@@ -108,12 +108,15 @@ RUN mkdir -p /opt/browsergrid/scripts
 RUN groupadd -g ${GID} browseruser && \
     useradd -u ${UID} -g ${GID} -s /bin/bash -m -d ${HOME} browseruser
 
-RUN chmod -R +x /opt/browsergrid/scripts/
+# Copy scripts first, then set permissions
 COPY docker/scripts/ /opt/browsergrid/scripts/
+RUN chmod -R +x /opt/browsergrid/scripts/ && \
+    chown -R browseruser:browseruser /opt/browsergrid/scripts
 
 # Set proper permissions for directories that need to be accessed by the non-root user
 RUN mkdir -p ${HOME}/.cache && \
     mkdir -p ${HOME}/.config && \
+    mkdir -p ${HOME}/.npm && \
     chown -R browseruser:browseruser /opt/browsergrid && \
     chown -R browseruser:browseruser ${HOME} && \
     chmod -R 755 ${HOME}

@@ -1,6 +1,11 @@
 #!/bin/bash
 set -e
 
+# Ensure npm cache has correct permissions
+if [ -d "${HOME}/.npm" ]; then
+  chown -R ${UID}:${GID} "${HOME}/.npm"
+fi
+
 rm -f /tmp/.X0-lock #
 
 

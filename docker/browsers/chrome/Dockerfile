@@ -27,5 +27,6 @@ RUN chown browseruser:browseruser /start.sh
 
 HEALTHCHECK --interval=5s --timeout=3s --retries=3 CMD ["docker-healthcheck"]
 
+
 # Run Chrome as browseruser while keeping the container's main process as root
 CMD ["su", "-c", "/start.sh", "browseruser"]
