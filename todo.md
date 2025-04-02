@@ -15,6 +15,12 @@
   - Webhook client
 - Build browser group functionality
 - Create CLI and SDK from client code
+- Develop SDKs in:
+  - JavaScript/TypeScript
+  - Python
+  - Go
+  - Java
+  - C#
 
 ## UI Development
 - Add UI using components from AutoCrawler console repo
