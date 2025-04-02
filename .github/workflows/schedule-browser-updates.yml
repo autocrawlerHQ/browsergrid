@@ -1,0 +1,16 @@
+name: Schedule Browser Updates
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Run daily at midnight
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  trigger-check-workflow:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger browser version check workflow
+        uses: benc-uk/workflow-dispatch@v1
+        with:
+          workflow: check-browser-versions.yml
+          token: ${{ secrets.GITHUB_TOKEN }} 

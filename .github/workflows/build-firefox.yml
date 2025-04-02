@@ -1,0 +1,58 @@
+name: Build Firefox Browser
+
+on:
+  workflow_dispatch:  # Allow manual triggering
+  push:
+    branches:
+      - main
+    paths:
+      - 'docker/browsers/firefox/**'
+      - '.github/workflows/build-firefox.yml'
+
+jobs:
+  get-playwright-version:
+    uses: ./.github/workflows/check-playwright-version.yml
+
+  get-browser-version:
+    needs: get-playwright-version
+    uses: ./.github/workflows/get-browser-version.yml
+    with:
+      browser: firefox
+
+  build-firefox:
+    needs: [get-playwright-version, get-browser-version]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build base image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/browsers/base/Dockerfile
+          push: false
+          load: true
+          tags: browsergrid/base:latest
+
+      - name: Build Firefox image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/browsers/firefox/Dockerfile
+          build-args: |
+            BROWSER_VERSION=${{ needs.get-browser-version.outputs.browser_version }}
+            PLAYWRIGHT_VERSION=${{ needs.get-playwright-version.outputs.playwright_version }}
+          push: false
+          load: true
+          tags: browsergrid/firefox:${{ needs.get-browser-version.outputs.browser_version }}
+
+      - name: Test Firefox image
+        run: |
+          # Add testing logic here
+          echo "Testing Firefox browser image"
+          docker images
+          echo "Successfully built Firefox browser image version ${{ needs.get-browser-version.outputs.browser_version }}" 

@@ -1,0 +1,58 @@
+name: Build Chrome Browser
+
+on:
+  workflow_dispatch:  # Allow manual triggering
+  push:
+    branches:
+      - main
+    paths:
+      - 'docker/browsers/chrome/**'
+      - '.github/workflows/build-chrome.yml'
+
+jobs:
+  get-playwright-version:
+    uses: ./.github/workflows/check-playwright-version.yml
+
+  get-browser-version:
+    needs: get-playwright-version
+    uses: ./.github/workflows/get-browser-version.yml
+    with:
+      browser: chrome
+
+  build-chrome:
+    needs: [get-playwright-version, get-browser-version]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build base image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/browsers/base/Dockerfile
+          push: false
+          load: true
+          tags: browsergrid/base:latest
+
+      - name: Build Chrome image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/browsers/chrome/Dockerfile
+          build-args: |
+            BROWSER_VERSION=${{ needs.get-browser-version.outputs.browser_version }}
+            PLAYWRIGHT_VERSION=${{ needs.get-playwright-version.outputs.playwright_version }}
+          push: false
+          load: true
+          tags: browsergrid/chrome:${{ needs.get-browser-version.outputs.browser_version }}
+
+      - name: Test Chrome image
+        run: |
+          # Add testing logic here
+          echo "Testing Chrome browser image"
+          docker images
+          echo "Successfully built Chrome browser image version ${{ needs.get-browser-version.outputs.browser_version }}" 
