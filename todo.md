@@ -72,6 +72,7 @@
 
 ## Maintenance
 - [ ] Add scheduled maintenance mode
+- [ ] Session migration between browser instances (if needed. see apify for inspiration - live migration of sessions for running scrapers)
 - [ ] Implement health checks and monitoring
 - [ ] Create backup and restore procedures
 - [ ] Add logging and monitoring (metrics, logs, traces)
