@@ -4,7 +4,24 @@
 - build browser group 
 - create worker client, pool client, session instance client ( that actually communicates with our browser session ), webhook client that interacts with the instance
 - create cli and sdk from client code 
-- build 
+
+
+-- add ui ( use components from autocrawler console)
+  - pages
+    - session list
+    - session details with chat interface ( cua endpoint )
+    - profile list
+    - profile details
+    - workpool list
+    - workpool details
+    - worker list
+    - worker details
+    - webhook list
+    - webhook details
+    - webhook create
+    - webhook edit
+    - webhook delete
+    
 
 
 - link server api and browser instance api. we implemented a server webhook api for defining webhooks and implemented the webhook api in the browser instance. that sends cdp events to set webhooks. 
