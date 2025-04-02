@@ -6,7 +6,7 @@
 - create cli and sdk from client code 
 
 
--- add ui ( use components from autocrawler console)
+- add ui ( use components from autocrawler console)
   - pages
     - session list
     - session details with chat interface ( cua endpoint )
@@ -21,8 +21,13 @@
     - webhook create
     - webhook edit
     - webhook delete
+    - deployment list
+    - deployment details
+    - deployment create
+    - deployment edit
+    - deployment delete
     
-
+- add deployments (package code to run along browser instance)
 
 - link server api and browser instance api. we implemented a server webhook api for defining webhooks and implemented the webhook api in the browser instance. that sends cdp events to set webhooks. 
 
