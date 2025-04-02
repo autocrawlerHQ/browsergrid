@@ -33,6 +33,16 @@
 - [ ] Link server API and browser instance API
 - [ ] Integrate webhook API between server and browser instance
 
+## Worker Integrations
+- [ ] local worker
+- [ ] docker worker
+- [ ] kubernetes worker ( support both spot and on-demand )
+- [ ] azure container instance worker
+- [ ] gcp cloud function worker
+- [ ] aws ecs worker
+
+
+
 ## UI Development
 - [ ] Add UI using components from AutoCrawler console repo
   - [ ] Session management (list, details with chat interface)
