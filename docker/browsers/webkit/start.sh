@@ -180,7 +180,7 @@ httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(\`WebKit CDP proxy server running on port \${PORT}\`);
 });
 EOL
-BROWSER_VERSION=$(/opt/browsergrid/scripts/playwright-version-tracker.js --get-single-browser-version webkit)
+BROWSER_VERSION=$(node /opt/browsergrid/scripts/playwright-version-tracker.js --get-single-browser-version webkit)
 echo "Starting WebKit ${BROWSER_VERSION}..."
 node ${HOME}/webkit-proxy.js > /var/log/webkit.log 2> /var/log/webkit.err &
 

@@ -43,7 +43,7 @@ export GOOGLE_API_KEY="AIzaSyCkfPOPZXDKNn8hhgu3JrA62wIgC93d44k"
 export GOOGLE_DEFAULT_CLIENT_ID="811574891467.apps.googleusercontent.com"
 export GOOGLE_DEFAULT_CLIENT_SECRET="kdloedMFGdGla2P1zacGjAQh"
 
-BROWSER_VERSION=$(/opt/browsergrid/scripts/playwright-version-tracker.js --get-single-browser-version chromium)
+BROWSER_VERSION=$(node /opt/browsergrid/scripts/playwright-version-tracker.js --get-single-browser-version chromium)
 
 echo "Starting Chromium ${BROWSER_VERSION} with data directory: ${HOME}/data-dir"
 echo "Browser path: ${BROWSER_PATH}"

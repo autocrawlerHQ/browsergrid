@@ -30,7 +30,7 @@ if [ -n "$PROXY_SERVER" ]; then
   echo "Using proxy server: $PROXY_SERVER"
   PROXY_ARG="--proxy-server=$PROXY_SERVER"
 fi
-BROWSER_VERSION=$(/opt/browsergrid/scripts/playwright-version-tracker.js --get-single-browser-version chrome)
+BROWSER_VERSION=$(node /opt/browsergrid/scripts/playwright-version-tracker.js --get-single-browser-version chrome)
 
 echo "Starting Chrome ${BROWSER_VERSION} with data directory: ${HOME}/data-dir"
 exec /usr/bin/google-chrome-stable \
