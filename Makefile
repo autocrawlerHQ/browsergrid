@@ -5,7 +5,7 @@
 # and managing Docker services for both server and browser
 # environments.
 
-# NOTE: This does not work in windows, use WSL if possible.
+# NOTE: This does not work in windows powershell, use WSL, git bash, msys2 bash, or cmd if possible.
 
 # ======================================================
 # Default settings
@@ -65,6 +65,9 @@ help:
 	@echo "  make browser"
 	@echo "  make browser build"
 	@echo "  make browser BROWSER=chromium up"
+	@echo "  make server"
+	@echo "  make server build"
+	@echo "  make server up"
 	@echo ""
 	@echo "Current configuration:"
 	@echo "  Environment: $(ENVIRONMENT)"

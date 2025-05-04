@@ -67,12 +67,12 @@ def patch_settings():
     
     # Define a unified patching function for consistent patching
     def patch_env(monkeypatch):
-        with patch('src.server.core.settings.POSTGRES_USER', 'test_user'), \
-             patch('src.server.core.settings.POSTGRES_PASSWORD', 'test_password'), \
-             patch('src.server.core.settings.POSTGRES_HOST', 'test_host'), \
-             patch('src.server.core.settings.POSTGRES_PORT', 5432), \
-             patch('src.server.core.settings.POSTGRES_DB', 'test_db'), \
-             patch('src.server.core.settings.DATABASE_URL', 'postgresql://test_url'):
+        with patch('browsergrid.server.core.settings.POSTGRES_USER', 'test_user'), \
+             patch('browsergrid.server.core.settings.POSTGRES_PASSWORD', 'test_password'), \
+             patch('browsergrid.server.core.settings.POSTGRES_HOST', 'test_host'), \
+             patch('browsergrid.server.core.settings.POSTGRES_PORT', 5432), \
+             patch('browsergrid.server.core.settings.POSTGRES_DB', 'test_db'), \
+             patch('browsergrid.server.core.settings.DATABASE_URL', 'postgresql://test_url'):
             yield
     
     return patch_env

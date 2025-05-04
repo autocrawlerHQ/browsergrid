@@ -22,13 +22,13 @@ class TestDatabaseSettings:
         mock_settings.DATABASE_URL = 'postgresql://test_url'
         
         # Patch sys.modules to replace the settings module
-        with patch.dict('sys.modules', {'src.server.core.settings': mock_settings}):
+        with patch.dict('sys.modules', {'browsergrid.server.core.settings': mock_settings}):
             # Force reload to pick up the mock
-            if 'src.server.core.db.session' in sys.modules:
-                del sys.modules['src.server.core.db.session']
+            if 'browsergrid.server.core.db.session' in sys.modules:
+                del sys.modules['browsergrid.server.core.db.session']
             
             # Import after patching
-            from src.server.core.db.session import DatabaseSettings
+            from browsergrid.server.core.db.session import DatabaseSettings
             
             # Create a new settings instance
             settings = DatabaseSettings()
@@ -57,10 +57,10 @@ class TestDatabaseManager:
         mock_sessionmaker = MagicMock(return_value=mock_factory)
         
         # Import with patched functions
-        with patch('src.server.core.db.session.create_async_engine', mock_create_engine), \
-             patch('src.server.core.db.session.async_sessionmaker', mock_sessionmaker):
+        with patch('browsergrid.server.core.db.session.create_async_engine', mock_create_engine), \
+             patch('browsergrid.server.core.db.session.async_sessionmaker', mock_sessionmaker):
             
-            from src.server.core.db.session import DatabaseSessionManager
+            from browsergrid.server.core.db.session import DatabaseSessionManager
             
             # Create fresh instance
             manager = DatabaseSessionManager()
@@ -81,7 +81,7 @@ class TestDatabaseManager:
         mock_engine = AsyncMock()
         
         # Import the manager class
-        from src.server.core.db.session import DatabaseSessionManager
+        from browsergrid.server.core.db.session import DatabaseSessionManager
         
         # Create manager with mocked engine
         manager = DatabaseSessionManager()
@@ -117,7 +117,7 @@ class TestDatabaseManager:
         mock_engine.begin = MagicMock(return_value=AsyncCtxMock())
         
         # Import the manager class
-        from src.server.core.db.session import DatabaseSessionManager
+        from browsergrid.server.core.db.session import DatabaseSessionManager
         
         # Create manager with mocked engine
         manager = DatabaseSessionManager()
@@ -141,7 +141,7 @@ class TestDatabaseManager:
         mock_factory = MagicMock(return_value=mock_session)
         
         # Import the manager class
-        from src.server.core.db.session import DatabaseSessionManager
+        from browsergrid.server.core.db.session import DatabaseSessionManager
         
         # Create manager with mocked sessionmaker
         manager = DatabaseSessionManager()
@@ -168,8 +168,8 @@ class TestDatabaseManager:
             yield mock_session
         
         # Import with patched session manager
-        with patch('src.server.core.db.session.sessionmanager.session', mock_session_cm):
-            from src.server.core.db.session import get_db
+        with patch('browsergrid.server.core.db.session.sessionmanager.session', mock_session_cm):
+            from browsergrid.server.core.db.session import get_db
             
             # Use get_db as an async generator
             db_gen = get_db()

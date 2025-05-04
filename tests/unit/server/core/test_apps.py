@@ -8,7 +8,7 @@ import sys
 from typing import List, Dict, Type
 
 # Import the modules to be tested
-from src.server.core.apps import AppConfig, AppRegistry, autodiscover_modules, apps
+from browsergrid.server.core.apps import AppConfig, AppRegistry, autodiscover_modules, apps
 
 
 # ===== APP CONFIG TESTS =====
@@ -23,7 +23,7 @@ def test_app_config_init_with_simple_app_name():
 
 def test_app_config_init_with_dotted_app_name():
     """Test initialization with a dotted app name"""
-    app_config = AppConfig("src.server.apps.myapp")
+    app_config = AppConfig("browsergrid.server.apps.myapp")
     assert app_config.name == "myapp"
     assert app_config.verbose_name == "Myapp"
     assert app_config.models_module is None
@@ -34,7 +34,7 @@ def test_app_config_explicit_name_overrides_automatic():
     class CustomAppConfig(AppConfig):
         name = "custom"
         
-    app_config = CustomAppConfig("src.server.apps.myapp")
+    app_config = CustomAppConfig("browsergrid.server.apps.myapp")
     assert app_config.name == "custom"
 
 
@@ -106,7 +106,7 @@ def test_app_registry_init(app_registry):
 def test_app_registry_populate_uses_installed_apps_by_default(app_registry, monkeypatch):
     """Test that populate uses INSTALLED_APPS by default"""
     # Mock INSTALLED_APPS
-    monkeypatch.setattr('src.server.core.apps.INSTALLED_APPS', ['app1', 'app2'])
+    monkeypatch.setattr('browsergrid.server.core.apps.INSTALLED_APPS', ['app1', 'app2'])
     
     # Mock load_app_config
     mock_load_app_config = MagicMock()
@@ -247,7 +247,7 @@ def test_autodiscover_imports_modules(monkeypatch):
     # Mock apps registry
     mock_apps = MagicMock()
     mock_apps.get_app_configs.return_value = [config1, config2]
-    monkeypatch.setattr('src.server.core.apps.apps', mock_apps)
+    monkeypatch.setattr('browsergrid.server.core.apps.apps', mock_apps)
     
     # Mock importlib
     mock_import = MagicMock()
@@ -274,7 +274,7 @@ def test_autodiscover_handles_import_errors(monkeypatch):
     # Mock apps registry
     mock_apps = MagicMock()
     mock_apps.get_app_configs.return_value = [config1, config2]
-    monkeypatch.setattr('src.server.core.apps.apps', mock_apps)
+    monkeypatch.setattr('browsergrid.server.core.apps.apps', mock_apps)
     
     # Mock importlib to raise error on second import
     call_count = 0

@@ -11,7 +11,7 @@ from uuid import uuid4
 import contextlib
 from typing import AsyncIterator
 
-from src.server.core.db.base import Base
+from browsergrid.server.core.db.base import Base
 
 
 # Define a test model

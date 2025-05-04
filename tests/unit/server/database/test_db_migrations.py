@@ -121,20 +121,20 @@ class TestMigrations:
         
         # Create additional patches
         patches = {
-            'src.server.core.db.migrations.sessionmanager': manager,
-            'src.server.core.db.migrations.settings': settings,
-            'src.server.core.db.migrations.apps': mock_app_module,
+            'browsergrid.server.core.db.migrations.sessionmanager': manager,
+            'browsergrid.server.core.db.migrations.settings': settings,
+            'browsergrid.server.core.db.migrations.apps': mock_app_module,
             'importlib.import_module': MagicMock()
         }
         
         # Apply all patches
         with patch.dict('sys.modules', patches):
             # Force reload the migrations module
-            if 'src.server.core.db.migrations' in sys.modules:
-                del sys.modules['src.server.core.db.migrations']
+            if 'browsergrid.server.core.db.migrations' in sys.modules:
+                del sys.modules['browsergrid.server.core.db.migrations']
                 
             # Import and return
-            import src.server.core.db.migrations as migrations
+            import browsergrid.server.core.db.migrations as migrations
             return migrations
     
     def test_get_alembic_config(self, migration_module, mock_alembic_modules, mock_alembic_config, patch_migrations_path):

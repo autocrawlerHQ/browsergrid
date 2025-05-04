@@ -1,24 +1,26 @@
 [project]
 name = "browsergrid"
 version = "0.1.0"
-description = ""
+description = "A distributed browser automation platform"
 authors = [
-    {name = "Your Name",email = "you@example.com"}
+    {name = "Galad Dirie",email = "hello@galad.ca"}
 ]
 readme = "README.md"
 requires-python = ">=3.12, <4.0"
-package-mode = false
 dependencies = [
     "requests (>=2.32.3,<3.0.0)",
     "fastapi (>=0.115.11,<0.116.0)",
     "uvicorn (>=0.34.0,<0.35.0)",
     "sqlalchemy[asyncio] (>=2.0.39,<3.0.0)",
     "alembic (>=1.15.1,<2.0.0)",
-    "psycopg2 (>=2.9.10,<3.0.0)",
+    "psycopg2-binary (>=2.9.10,<3.0.0)",
     "watchfiles (>=1.0.4,<2.0.0)",
     "loguru (>=0.7.3,<0.8.0)",
     "httpx (>=0.28.1,<0.29.0)",
     "asyncpg (>=0.30.0,<0.31.0)"
+]
+packages = [
+    {include = "browsergrid", from = "src"}
 ]
 
 
@@ -36,4 +38,8 @@ pytest-mock = "^3.14.0"
 aiosqlite = "^0.21.0"
 pytest-playwright = "^0.7.0"
 
+
+
+[tool.poetry.group.dev.dependencies]
+mypy = "^1.15.0"
 
