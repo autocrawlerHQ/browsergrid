@@ -164,7 +164,6 @@ Configurable webhooks that trigger on browser events:
 ### Running Tests
 
 ```bash
-# Run all tests
 pytest
 
 # Run browser-specific tests
