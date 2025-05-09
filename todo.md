@@ -7,6 +7,7 @@
 - [ ] Add automated readme badges based on test results
 
 ## Client Development & Connection System
+- [ ] Network interceptor for browser sessions, should be reusable stored in server applied to browser instances when requested
 - [ ] Refactor client by removing CLI functionality
 - [ ] Create specialized clients:
   - [ ] Worker client
