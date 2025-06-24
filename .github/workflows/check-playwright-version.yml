@@ -1,0 +1,30 @@
+name: Check Playwright Version
+
+on:
+  workflow_call:
+    # This workflow can be called by other workflows
+    outputs:
+      playwright_version:
+        description: "The latest version of Playwright"
+        value: ${{ jobs.check-version.outputs.playwright_version }}
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      playwright_version: ${{ steps.get-version.outputs.playwright_version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Get latest Playwright version
+        id: get-version
+        run: |
+          PLAYWRIGHT_VERSION=$(node docker/scripts/playwright-version-tracker.js --get-playwright-version)
+          echo "playwright_version=${PLAYWRIGHT_VERSION}" >> $GITHUB_OUTPUT
+          echo "Latest Playwright version: ${PLAYWRIGHT_VERSION}" 

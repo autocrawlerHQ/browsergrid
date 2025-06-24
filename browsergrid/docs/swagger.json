@@ -1,0 +1,1726 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "BrowserGrid is a distributed browser automation platform that provides scalable browser sessions and worker pool management.",
+        "title": "BrowserGrid API",
+        "termsOfService": "http://swagger.io/terms/",
+        "contact": {
+            "name": "API Support",
+            "url": "http://www.swagger.io/support",
+            "email": "support@swagger.io"
+        },
+        "license": {
+            "name": "Apache 2.0",
+            "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
+        },
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/api/v1",
+    "paths": {
+        "/api/v1/sessions": {
+            "get": {
+                "description": "Get a list of browser sessions with optional filtering by status and time range",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sessions"
+                ],
+                "summary": "List browser sessions",
+                "parameters": [
+                    {
+                        "enum": [
+                            "pending",
+                            "starting",
+                            "available",
+                            "claimed",
+                            "running",
+                            "idle",
+                            "completed",
+                            "failed",
+                            "expired",
+                            "crashed",
+                            "timed_out",
+                            "terminated",
+                            "pending",
+                            "starting",
+                            "available",
+                            "claimed",
+                            "running",
+                            "idle",
+                            "completed",
+                            "failed",
+                            "expired",
+                            "crashed",
+                            "timed_out",
+                            "terminated"
+                        ],
+                        "type": "string",
+                        "description": "Filter by session status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter sessions created after this time (RFC3339)",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter sessions created before this time (RFC3339)",
+                        "name": "end_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Pagination offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Pagination limit",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of sessions with pagination info",
+                        "schema": {
+                            "$ref": "#/definitions/SessionListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new browser session with specified configuration",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sessions"
+                ],
+                "summary": "Create a new browser session",
+                "parameters": [
+                    {
+                        "description": "Session configuration",
+                        "name": "session",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/Session"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/Session"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/sessions/{id}": {
+            "get": {
+                "description": "Get details of a specific browser session by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sessions"
+                ],
+                "summary": "Get a browser session",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Session ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/Session"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/sessions/{id}/events": {
+            "get": {
+                "description": "Get a list of session events with optional filtering by event type and time range",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "List session events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Session ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "enum": [
+                            "session_created",
+                            "resource_allocated",
+                            "session_starting",
+                            "container_started",
+                            "browser_started",
+                            "session_available",
+                            "session_claimed",
+                            "session_assigned",
+                            "session_ready",
+                            "session_active",
+                            "session_idle",
+                            "heartbeat",
+                            "pool_added",
+                            "pool_removed",
+                            "pool_drained",
+                            "session_completed",
+                            "session_expired",
+                            "session_timed_out",
+                            "session_terminated",
+                            "startup_failed",
+                            "browser_crashed",
+                            "container_crashed",
+                            "resource_exhausted",
+                            "network_error",
+                            "status_changed",
+                            "config_updated",
+                            "health_check"
+                        ],
+                        "type": "string",
+                        "description": "Filter by event type",
+                        "name": "event_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter events created after this time (RFC3339)",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter events created before this time (RFC3339)",
+                        "name": "end_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Pagination offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Pagination limit",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of events with pagination info",
+                        "schema": {
+                            "$ref": "#/definitions/SessionEventListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new event for a session (e.g., page navigation, user interaction)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "Create a session event",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Session ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Session event data",
+                        "name": "event",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/SessionEvent"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/SessionEvent"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/sessions/{id}/metrics": {
+            "post": {
+                "description": "Create performance metrics for a session (CPU, memory, network usage)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "metrics"
+                ],
+                "summary": "Create session metrics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Session ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Session metrics data",
+                        "name": "metrics",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/SessionMetrics"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/SessionMetrics"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/workers": {
+            "get": {
+                "description": "Get a list of all workers with optional filtering",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workers"
+                ],
+                "summary": "List workers",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by work pool ID (UUID)",
+                        "name": "pool_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Filter by online status",
+                        "name": "online",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of workers",
+                        "schema": {
+                            "$ref": "#/definitions/WorkerListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/workers/{id}": {
+            "get": {
+                "description": "Get details of a specific worker by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workers"
+                ],
+                "summary": "Get a worker",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Worker ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/Worker"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a worker from the pool",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workers"
+                ],
+                "summary": "Delete a worker",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Worker ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/workers/{id}/heartbeat": {
+            "post": {
+                "description": "Update worker status with current active session count",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workers"
+                ],
+                "summary": "Send worker heartbeat",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Worker ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Heartbeat data",
+                        "name": "heartbeat",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/WorkerHeartbeatRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/workers/{id}/pause": {
+            "post": {
+                "description": "Pause or resume a worker to control its availability",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workers"
+                ],
+                "summary": "Pause or resume a worker",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Worker ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Pause configuration",
+                        "name": "pause",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/WorkerPauseRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/workpools": {
+            "get": {
+                "description": "Get a list of all work pools with optional filtering",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workpools"
+                ],
+                "summary": "List work pools",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "Filter by paused status",
+                        "name": "paused",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of work pools",
+                        "schema": {
+                            "$ref": "#/definitions/WorkPoolListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new work pool to manage browser workers",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workpools"
+                ],
+                "summary": "Create a new work pool",
+                "parameters": [
+                    {
+                        "description": "Work pool configuration",
+                        "name": "workpool",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/WorkPool"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/WorkPool"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/workpools/{id}": {
+            "get": {
+                "description": "Get details of a specific work pool by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workpools"
+                ],
+                "summary": "Get a work pool",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Work Pool ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/WorkPool"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete an existing work pool and all its workers",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workpools"
+                ],
+                "summary": "Delete a work pool",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Work Pool ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "Update configuration of an existing work pool",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workpools"
+                ],
+                "summary": "Update a work pool",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Work Pool ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to update",
+                        "name": "updates",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/workpools/{id}/drain": {
+            "post": {
+                "description": "Gracefully drain all workers from a work pool",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workpools"
+                ],
+                "summary": "Drain a work pool",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Work Pool ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/workpools/{id}/scale": {
+            "post": {
+                "description": "Update scaling parameters for a work pool",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workpools"
+                ],
+                "summary": "Scale a work pool",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Work Pool ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Scaling parameters",
+                        "name": "scaling",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/ScalingRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Scaling operation result",
+                        "schema": {
+                            "$ref": "#/definitions/ScalingResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/workpools/{id}/stats": {
+            "get": {
+                "description": "Get detailed statistics and metrics for a specific work pool",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pool-management"
+                ],
+                "summary": "Get work pool statistics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Work Pool ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Work pool statistics",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "Browser": {
+            "description": "Supported browser types",
+            "type": "string",
+            "enum": [
+                "chrome",
+                "chromium",
+                "firefox",
+                "edge",
+                "webkit",
+                "safari"
+            ],
+            "x-enum-varnames": [
+                "BrowserChrome",
+                "BrowserChromium",
+                "BrowserFirefox",
+                "BrowserEdge",
+                "BrowserOpera",
+                "BrowserSafari"
+            ]
+        },
+        "BrowserVersion": {
+            "description": "Browser version types (latest, stable, canary, dev)",
+            "type": "string",
+            "enum": [
+                "latest",
+                "stable",
+                "canary",
+                "dev"
+            ],
+            "x-enum-varnames": [
+                "VerLatest",
+                "VerStable",
+                "VerCanary",
+                "VerDev"
+            ]
+        },
+        "ErrorResponse": {
+            "description": "Error response with details",
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "Validation failed"
+                }
+            }
+        },
+        "MessageResponse": {
+            "description": "Simple message response",
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "Operation completed successfully"
+                }
+            }
+        },
+        "OperatingSystem": {
+            "description": "Supported operating systems for browser sessions",
+            "type": "string",
+            "enum": [
+                "windows",
+                "macos",
+                "linux"
+            ],
+            "x-enum-varnames": [
+                "OSWindows",
+                "OSMacOS",
+                "OSLinux"
+            ]
+        },
+        "ProviderType": {
+            "description": "Type of provider for a work pool",
+            "type": "string",
+            "enum": [
+                "docker",
+                "azure_aci",
+                "local"
+            ],
+            "x-enum-varnames": [
+                "ProviderDocker",
+                "ProviderACI",
+                "ProviderLocal"
+            ]
+        },
+        "ProxyConfig": {
+            "description": "Proxy configuration with URL and optional credentials",
+            "type": "object",
+            "properties": {
+                "proxy_password": {
+                    "type": "string",
+                    "example": "pass"
+                },
+                "proxy_url": {
+                    "type": "string",
+                    "example": "http://proxy.example.com:8080"
+                },
+                "proxy_username": {
+                    "type": "string",
+                    "example": "user"
+                }
+            }
+        },
+        "ResourceLimits": {
+            "description": "Resource limits for CPU, memory and timeout",
+            "type": "object",
+            "properties": {
+                "cpu": {
+                    "type": "number",
+                    "example": 2
+                },
+                "memory": {
+                    "type": "string",
+                    "example": "2GB"
+                },
+                "timeout_minutes": {
+                    "type": "integer",
+                    "example": 30
+                }
+            }
+        },
+        "ScalingRequest": {
+            "description": "Scaling parameters for updating work pool configuration",
+            "type": "object",
+            "properties": {
+                "auto_scale": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "max_concurrency": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "example": 10
+                },
+                "max_idle_time": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 1800
+                },
+                "max_session_duration": {
+                    "type": "integer",
+                    "minimum": 60,
+                    "example": 1800
+                },
+                "min_size": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 1
+                },
+                "paused": {
+                    "type": "boolean",
+                    "example": false
+                }
+            }
+        },
+        "ScalingResponse": {
+            "description": "Response from a scaling operation with updated parameters",
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "pool scaled"
+                },
+                "updates": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
+        "ScreenConfig": {
+            "description": "Screen configuration with width, height, DPI and scale",
+            "type": "object",
+            "properties": {
+                "dpi": {
+                    "type": "integer",
+                    "example": 96
+                },
+                "height": {
+                    "type": "integer",
+                    "example": 1080
+                },
+                "scale": {
+                    "type": "number",
+                    "example": 1
+                },
+                "width": {
+                    "type": "integer",
+                    "example": 1920
+                }
+            }
+        },
+        "Session": {
+            "description": "Browser session with configuration and status",
+            "type": "object",
+            "properties": {
+                "available_at": {
+                    "type": "string",
+                    "example": "2023-01-01T00:15:00Z"
+                },
+                "browser": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/Browser"
+                        }
+                    ],
+                    "example": "chrome"
+                },
+                "claimed_at": {
+                    "type": "string",
+                    "example": "2023-01-01T00:30:00Z"
+                },
+                "claimed_by": {
+                    "type": "string",
+                    "example": "client-123"
+                },
+                "container_id": {
+                    "type": "string",
+                    "example": "abc123"
+                },
+                "container_network": {
+                    "type": "string",
+                    "example": "browsergrid_default"
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2023-01-01T00:00:00Z"
+                },
+                "environment": {
+                    "type": "object"
+                },
+                "expires_at": {
+                    "type": "string",
+                    "example": "2023-01-01T01:00:00Z"
+                },
+                "headless": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "is_pooled": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "live_url": {
+                    "type": "string",
+                    "example": "http://localhost:7900"
+                },
+                "operating_system": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/OperatingSystem"
+                        }
+                    ],
+                    "example": "linux"
+                },
+                "pool_id": {
+                    "type": "string",
+                    "example": "chrome-pool"
+                },
+                "provider": {
+                    "type": "string",
+                    "example": "local"
+                },
+                "proxy": {
+                    "$ref": "#/definitions/ProxyConfig"
+                },
+                "resource_limits": {
+                    "$ref": "#/definitions/ResourceLimits"
+                },
+                "screen": {
+                    "$ref": "#/definitions/ScreenConfig"
+                },
+                "status": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/SessionStatus"
+                        }
+                    ],
+                    "example": "pending"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2023-01-01T00:00:00Z"
+                },
+                "version": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/BrowserVersion"
+                        }
+                    ],
+                    "example": "latest"
+                },
+                "webhooks_enabled": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "work_pool_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440002"
+                },
+                "worker_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440001"
+                },
+                "ws_endpoint": {
+                    "type": "string",
+                    "example": "ws://localhost:9222/devtools/browser"
+                }
+            }
+        },
+        "SessionEvent": {
+            "description": "Session event with type, data and timestamp",
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "object"
+                },
+                "event": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/SessionEventType"
+                        }
+                    ],
+                    "example": "session_created"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440003"
+                },
+                "session_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "timestamp": {
+                    "type": "string",
+                    "example": "2023-01-01T00:00:00Z"
+                }
+            }
+        },
+        "SessionEventListResponse": {
+            "description": "Response containing a list of session events with pagination info",
+            "type": "object",
+            "properties": {
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/SessionEvent"
+                    }
+                },
+                "limit": {
+                    "type": "integer",
+                    "example": 100
+                },
+                "offset": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 15
+                }
+            }
+        },
+        "SessionEventType": {
+            "description": "Types of events that can occur during a session",
+            "type": "string",
+            "enum": [
+                "session_created",
+                "resource_allocated",
+                "session_starting",
+                "container_started",
+                "browser_started",
+                "session_available",
+                "session_claimed",
+                "session_assigned",
+                "session_ready",
+                "session_active",
+                "session_idle",
+                "heartbeat",
+                "pool_added",
+                "pool_removed",
+                "pool_drained",
+                "session_completed",
+                "session_expired",
+                "session_timed_out",
+                "session_terminated",
+                "startup_failed",
+                "browser_crashed",
+                "container_crashed",
+                "resource_exhausted",
+                "network_error",
+                "status_changed",
+                "config_updated",
+                "health_check"
+            ],
+            "x-enum-varnames": [
+                "EvtSessionCreated",
+                "EvtResourceAllocated",
+                "EvtSessionStarting",
+                "EvtContainerStarted",
+                "EvtBrowserStarted",
+                "EvtSessionAvailable",
+                "EvtSessionClaimed",
+                "EvtSessionAssigned",
+                "EvtSessionReady",
+                "EvtSessionActive",
+                "EvtSessionIdle",
+                "EvtHeartbeat",
+                "EvtPoolAdded",
+                "EvtPoolRemoved",
+                "EvtPoolDrained",
+                "EvtSessionCompleted",
+                "EvtSessionExpired",
+                "EvtSessionTimedOut",
+                "EvtSessionTerminated",
+                "EvtStartupFailed",
+                "EvtBrowserCrashed",
+                "EvtContainerCrashed",
+                "EvtResourceExhausted",
+                "EvtNetworkError",
+                "EvtStatusChanged",
+                "EvtConfigUpdated",
+                "EvtHealthCheck"
+            ]
+        },
+        "SessionListResponse": {
+            "description": "Response containing a list of sessions with pagination info",
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "example": 100
+                },
+                "offset": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "sessions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/Session"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 25
+                }
+            }
+        },
+        "SessionMetrics": {
+            "description": "Performance metrics including CPU, memory and network usage",
+            "type": "object",
+            "properties": {
+                "cpu_percent": {
+                    "type": "number",
+                    "example": 45.2
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440004"
+                },
+                "memory_mb": {
+                    "type": "number",
+                    "example": 1024.5
+                },
+                "network_rx_bytes": {
+                    "type": "integer",
+                    "example": 1048576
+                },
+                "network_tx_bytes": {
+                    "type": "integer",
+                    "example": 2097152
+                },
+                "session_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "timestamp": {
+                    "type": "string",
+                    "example": "2023-01-01T00:00:00Z"
+                }
+            }
+        },
+        "SessionStatus": {
+            "description": "Current status of a browser session",
+            "type": "string",
+            "enum": [
+                "pending",
+                "starting",
+                "available",
+                "claimed",
+                "running",
+                "idle",
+                "completed",
+                "failed",
+                "expired",
+                "crashed",
+                "timed_out",
+                "terminated"
+            ],
+            "x-enum-varnames": [
+                "StatusPending",
+                "StatusStarting",
+                "StatusAvailable",
+                "StatusClaimed",
+                "StatusRunning",
+                "StatusIdle",
+                "StatusCompleted",
+                "StatusFailed",
+                "StatusExpired",
+                "StatusCrashed",
+                "StatusTimedOut",
+                "StatusTerminated"
+            ]
+        },
+        "WorkPool": {
+            "description": "Work pool configuration for managing browser workers",
+            "type": "object",
+            "properties": {
+                "auto_scale": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "created_at": {
+                    "type": "string",
+                    "example": "2023-01-01T00:00:00Z"
+                },
+                "default_env": {
+                    "type": "object"
+                },
+                "default_image": {
+                    "type": "string",
+                    "example": "browsergrid/chrome:latest"
+                },
+                "default_priority": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Pool for Chrome browser workers"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "max_concurrency": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "max_idle_time": {
+                    "type": "integer",
+                    "example": 1800
+                },
+                "max_session_duration": {
+                    "type": "integer",
+                    "example": 1800
+                },
+                "min_size": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Chrome Workers"
+                },
+                "paused": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "provider": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/ProviderType"
+                        }
+                    ],
+                    "example": "docker"
+                },
+                "queue_strategy": {
+                    "type": "string",
+                    "example": "fifo"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "example": "2023-01-01T00:00:00Z"
+                }
+            }
+        },
+        "WorkPoolListResponse": {
+            "description": "Response containing a list of work pools",
+            "type": "object",
+            "properties": {
+                "pools": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/WorkPool"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 5
+                }
+            }
+        },
+        "Worker": {
+            "description": "Worker instance that handles browser sessions",
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "hostname": {
+                    "type": "string",
+                    "example": "browsergrid-worker-1"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440001"
+                },
+                "last_beat": {
+                    "type": "string",
+                    "example": "2023-01-01T00:00:00Z"
+                },
+                "max_slots": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "name": {
+                    "type": "string",
+                    "example": "worker-chrome-001"
+                },
+                "paused": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "pool_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "provider": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/ProviderType"
+                        }
+                    ],
+                    "example": "docker"
+                },
+                "started_at": {
+                    "type": "string",
+                    "example": "2023-01-01T00:00:00Z"
+                }
+            }
+        },
+        "WorkerHeartbeatRequest": {
+            "description": "Heartbeat data with active session count",
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "example": 2
+                }
+            }
+        },
+        "WorkerListResponse": {
+            "description": "Response containing a list of workers",
+            "type": "object",
+            "properties": {
+                "total": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "workers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/Worker"
+                    }
+                }
+            }
+        },
+        "WorkerPauseRequest": {
+            "description": "Pause configuration for a worker",
+            "type": "object",
+            "properties": {
+                "paused": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "BasicAuth": {
+            "type": "basic"
+        }
+    },
+    "externalDocs": {
+        "description": "OpenAPI",
+        "url": "https://swagger.io/resources/open-api/"
+    }
+}

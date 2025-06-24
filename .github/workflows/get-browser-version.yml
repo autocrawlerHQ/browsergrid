@@ -1,0 +1,34 @@
+name: Get Browser Version
+
+on:
+  workflow_call:
+    inputs:
+      browser:
+        description: "The browser to get the version for (chrome, chromium, firefox, webkit)"
+        required: true
+        type: string
+    outputs:
+      browser_version:
+        description: "The version of the browser"
+        value: ${{ jobs.get-version.outputs.browser_version }}
+
+jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    outputs:
+      browser_version: ${{ steps.get-browser-version.outputs.browser_version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          
+      - name: Get browser version
+        id: get-browser-version
+        run: |
+          BROWSER_VERSION=$(node docker/scripts/playwright-version-tracker.js --get-single-browser-version ${{ inputs.browser }})
+          echo "browser_version=${BROWSER_VERSION}" >> $GITHUB_OUTPUT
+          echo "${{ inputs.browser }} version: ${BROWSER_VERSION}" 

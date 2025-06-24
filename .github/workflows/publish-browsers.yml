@@ -1,0 +1,93 @@
+name: Publish Browser Images
+
+on:
+  workflow_dispatch:  # Allow manual triggering
+  push:
+    branches:
+      - main
+    paths:
+      - 'docker/browsers/**'
+      - '.github/workflows/publish-browsers.yml'
+
+env:
+  REGISTRY: browsergrid
+
+jobs:
+  get-playwright-version:
+    uses: ./.github/workflows/check-playwright-version.yml
+
+  get-browser-versions:
+    needs: get-playwright-version
+    strategy:
+      matrix:
+        browser: [chrome, chromium, firefox, webkit]
+    uses: ./.github/workflows/get-browser-version.yml
+    with:
+      browser: ${{ matrix.browser }}
+
+  publish-browser-images:
+    needs: [get-playwright-version, get-browser-versions]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        browser: [chrome, chromium, firefox, webkit]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          
+      - name: Get browser version for ${{ matrix.browser }}
+        id: get-browser-version
+        uses: ./.github/workflows/get-browser-version.yml
+        with:
+          browser: ${{ matrix.browser }}
+        
+      - name: Check if tag exists
+        id: check-tag
+        run: |
+          # Check if image with this tag already exists
+          TAG_EXISTS=$(curl -s "https://hub.docker.com/v2/repositories/${{ env.REGISTRY }}/${{ matrix.browser }}/tags/${{ steps.get-browser-version.outputs.browser_version }}" | grep -q "\"name\"" && echo "true" || echo "false")
+          
+          echo "tag_exists=${TAG_EXISTS}" >> $GITHUB_OUTPUT
+
+      - name: Build and push base image
+        if: ${{ matrix.browser == 'chrome' }}
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/browsers/base/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/base:latest
+
+      - name: Build and push browser image
+        if: ${{ steps.check-tag.outputs.tag_exists == 'false' }}
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/browsers/${{ matrix.browser }}/Dockerfile
+          build-args: |
+            BROWSER_VERSION=${{ steps.get-browser-version.outputs.browser_version }}
+            PLAYWRIGHT_VERSION=${{ needs.get-playwright-version.outputs.playwright_version }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ matrix.browser }}:${{ steps.get-browser-version.outputs.browser_version }}
+            ${{ env.REGISTRY }}/${{ matrix.browser }}:latest
+
+      - name: Update version manifest
+        if: ${{ steps.check-tag.outputs.tag_exists == 'false' }}
+        run: |
+          echo "Updated ${{ matrix.browser }} to version ${{ steps.get-browser-version.outputs.browser_version }} with Playwright ${{ needs.get-playwright-version.outputs.playwright_version }}" >> browser_versions.txt
+          
+          # Additional logic to update a manifest file could be added here
+          # This could be used to keep track of which browser versions are available
+          
+          echo "Successfully built and pushed ${{ env.REGISTRY }}/${{ matrix.browser }}:${{ steps.get-browser-version.outputs.browser_version }}" 

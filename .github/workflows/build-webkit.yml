@@ -1,0 +1,58 @@
+name: Build WebKit Browser
+
+on:
+  workflow_dispatch:  # Allow manual triggering
+  push:
+    branches:
+      - main
+    paths:
+      - 'docker/browsers/webkit/**'
+      - '.github/workflows/build-webkit.yml'
+
+jobs:
+  get-playwright-version:
+    uses: ./.github/workflows/check-playwright-version.yml
+
+  get-browser-version:
+    needs: get-playwright-version
+    uses: ./.github/workflows/get-browser-version.yml
+    with:
+      browser: webkit
+
+  build-webkit:
+    needs: [get-playwright-version, get-browser-version]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build base image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/browsers/base/Dockerfile
+          push: false
+          load: true
+          tags: browsergrid/base:latest
+
+      - name: Build WebKit image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/browsers/webkit/Dockerfile
+          build-args: |
+            BROWSER_VERSION=${{ needs.get-browser-version.outputs.browser_version }}
+            PLAYWRIGHT_VERSION=${{ needs.get-playwright-version.outputs.playwright_version }}
+          push: false
+          load: true
+          tags: browsergrid/webkit:${{ needs.get-browser-version.outputs.browser_version }}
+
+      - name: Test WebKit image
+        run: |
+          # Add testing logic here
+          echo "Testing WebKit browser image"
+          docker images
+          echo "Successfully built WebKit browser image version ${{ needs.get-browser-version.outputs.browser_version }}" 

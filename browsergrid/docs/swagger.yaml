@@ -1,0 +1,1222 @@
+basePath: /api/v1
+definitions:
+  Browser:
+    description: Supported browser types
+    enum:
+    - chrome
+    - chromium
+    - firefox
+    - edge
+    - webkit
+    - safari
+    type: string
+    x-enum-varnames:
+    - BrowserChrome
+    - BrowserChromium
+    - BrowserFirefox
+    - BrowserEdge
+    - BrowserOpera
+    - BrowserSafari
+  BrowserVersion:
+    description: Browser version types (latest, stable, canary, dev)
+    enum:
+    - latest
+    - stable
+    - canary
+    - dev
+    type: string
+    x-enum-varnames:
+    - VerLatest
+    - VerStable
+    - VerCanary
+    - VerDev
+  ErrorResponse:
+    description: Error response with details
+    properties:
+      error:
+        example: Validation failed
+        type: string
+    type: object
+  MessageResponse:
+    description: Simple message response
+    properties:
+      message:
+        example: Operation completed successfully
+        type: string
+    type: object
+  OperatingSystem:
+    description: Supported operating systems for browser sessions
+    enum:
+    - windows
+    - macos
+    - linux
+    type: string
+    x-enum-varnames:
+    - OSWindows
+    - OSMacOS
+    - OSLinux
+  ProviderType:
+    description: Type of provider for a work pool
+    enum:
+    - docker
+    - azure_aci
+    - local
+    type: string
+    x-enum-varnames:
+    - ProviderDocker
+    - ProviderACI
+    - ProviderLocal
+  ProxyConfig:
+    description: Proxy configuration with URL and optional credentials
+    properties:
+      proxy_password:
+        example: pass
+        type: string
+      proxy_url:
+        example: http://proxy.example.com:8080
+        type: string
+      proxy_username:
+        example: user
+        type: string
+    type: object
+  ResourceLimits:
+    description: Resource limits for CPU, memory and timeout
+    properties:
+      cpu:
+        example: 2
+        type: number
+      memory:
+        example: 2GB
+        type: string
+      timeout_minutes:
+        example: 30
+        type: integer
+    type: object
+  ScalingRequest:
+    description: Scaling parameters for updating work pool configuration
+    properties:
+      auto_scale:
+        example: true
+        type: boolean
+      max_concurrency:
+        example: 10
+        minimum: 1
+        type: integer
+      max_idle_time:
+        example: 1800
+        minimum: 0
+        type: integer
+      max_session_duration:
+        example: 1800
+        minimum: 60
+        type: integer
+      min_size:
+        example: 1
+        minimum: 0
+        type: integer
+      paused:
+        example: false
+        type: boolean
+    type: object
+  ScalingResponse:
+    description: Response from a scaling operation with updated parameters
+    properties:
+      message:
+        example: pool scaled
+        type: string
+      updates:
+        additionalProperties: true
+        type: object
+    type: object
+  ScreenConfig:
+    description: Screen configuration with width, height, DPI and scale
+    properties:
+      dpi:
+        example: 96
+        type: integer
+      height:
+        example: 1080
+        type: integer
+      scale:
+        example: 1
+        type: number
+      width:
+        example: 1920
+        type: integer
+    type: object
+  Session:
+    description: Browser session with configuration and status
+    properties:
+      available_at:
+        example: "2023-01-01T00:15:00Z"
+        type: string
+      browser:
+        allOf:
+        - $ref: '#/definitions/Browser'
+        example: chrome
+      claimed_at:
+        example: "2023-01-01T00:30:00Z"
+        type: string
+      claimed_by:
+        example: client-123
+        type: string
+      container_id:
+        example: abc123
+        type: string
+      container_network:
+        example: browsergrid_default
+        type: string
+      created_at:
+        example: "2023-01-01T00:00:00Z"
+        type: string
+      environment:
+        type: object
+      expires_at:
+        example: "2023-01-01T01:00:00Z"
+        type: string
+      headless:
+        example: true
+        type: boolean
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      is_pooled:
+        example: false
+        type: boolean
+      live_url:
+        example: http://localhost:7900
+        type: string
+      operating_system:
+        allOf:
+        - $ref: '#/definitions/OperatingSystem'
+        example: linux
+      pool_id:
+        example: chrome-pool
+        type: string
+      provider:
+        example: local
+        type: string
+      proxy:
+        $ref: '#/definitions/ProxyConfig'
+      resource_limits:
+        $ref: '#/definitions/ResourceLimits'
+      screen:
+        $ref: '#/definitions/ScreenConfig'
+      status:
+        allOf:
+        - $ref: '#/definitions/SessionStatus'
+        example: pending
+      updated_at:
+        example: "2023-01-01T00:00:00Z"
+        type: string
+      version:
+        allOf:
+        - $ref: '#/definitions/BrowserVersion'
+        example: latest
+      webhooks_enabled:
+        example: false
+        type: boolean
+      work_pool_id:
+        example: 550e8400-e29b-41d4-a716-446655440002
+        type: string
+      worker_id:
+        example: 550e8400-e29b-41d4-a716-446655440001
+        type: string
+      ws_endpoint:
+        example: ws://localhost:9222/devtools/browser
+        type: string
+    type: object
+  SessionEvent:
+    description: Session event with type, data and timestamp
+    properties:
+      data:
+        type: object
+      event:
+        allOf:
+        - $ref: '#/definitions/SessionEventType'
+        example: session_created
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440003
+        type: string
+      session_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      timestamp:
+        example: "2023-01-01T00:00:00Z"
+        type: string
+    type: object
+  SessionEventListResponse:
+    description: Response containing a list of session events with pagination info
+    properties:
+      events:
+        items:
+          $ref: '#/definitions/SessionEvent'
+        type: array
+      limit:
+        example: 100
+        type: integer
+      offset:
+        example: 0
+        type: integer
+      total:
+        example: 15
+        type: integer
+    type: object
+  SessionEventType:
+    description: Types of events that can occur during a session
+    enum:
+    - session_created
+    - resource_allocated
+    - session_starting
+    - container_started
+    - browser_started
+    - session_available
+    - session_claimed
+    - session_assigned
+    - session_ready
+    - session_active
+    - session_idle
+    - heartbeat
+    - pool_added
+    - pool_removed
+    - pool_drained
+    - session_completed
+    - session_expired
+    - session_timed_out
+    - session_terminated
+    - startup_failed
+    - browser_crashed
+    - container_crashed
+    - resource_exhausted
+    - network_error
+    - status_changed
+    - config_updated
+    - health_check
+    type: string
+    x-enum-varnames:
+    - EvtSessionCreated
+    - EvtResourceAllocated
+    - EvtSessionStarting
+    - EvtContainerStarted
+    - EvtBrowserStarted
+    - EvtSessionAvailable
+    - EvtSessionClaimed
+    - EvtSessionAssigned
+    - EvtSessionReady
+    - EvtSessionActive
+    - EvtSessionIdle
+    - EvtHeartbeat
+    - EvtPoolAdded
+    - EvtPoolRemoved
+    - EvtPoolDrained
+    - EvtSessionCompleted
+    - EvtSessionExpired
+    - EvtSessionTimedOut
+    - EvtSessionTerminated
+    - EvtStartupFailed
+    - EvtBrowserCrashed
+    - EvtContainerCrashed
+    - EvtResourceExhausted
+    - EvtNetworkError
+    - EvtStatusChanged
+    - EvtConfigUpdated
+    - EvtHealthCheck
+  SessionListResponse:
+    description: Response containing a list of sessions with pagination info
+    properties:
+      limit:
+        example: 100
+        type: integer
+      offset:
+        example: 0
+        type: integer
+      sessions:
+        items:
+          $ref: '#/definitions/Session'
+        type: array
+      total:
+        example: 25
+        type: integer
+    type: object
+  SessionMetrics:
+    description: Performance metrics including CPU, memory and network usage
+    properties:
+      cpu_percent:
+        example: 45.2
+        type: number
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440004
+        type: string
+      memory_mb:
+        example: 1024.5
+        type: number
+      network_rx_bytes:
+        example: 1048576
+        type: integer
+      network_tx_bytes:
+        example: 2097152
+        type: integer
+      session_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      timestamp:
+        example: "2023-01-01T00:00:00Z"
+        type: string
+    type: object
+  SessionStatus:
+    description: Current status of a browser session
+    enum:
+    - pending
+    - starting
+    - available
+    - claimed
+    - running
+    - idle
+    - completed
+    - failed
+    - expired
+    - crashed
+    - timed_out
+    - terminated
+    type: string
+    x-enum-varnames:
+    - StatusPending
+    - StatusStarting
+    - StatusAvailable
+    - StatusClaimed
+    - StatusRunning
+    - StatusIdle
+    - StatusCompleted
+    - StatusFailed
+    - StatusExpired
+    - StatusCrashed
+    - StatusTimedOut
+    - StatusTerminated
+  WorkPool:
+    description: Work pool configuration for managing browser workers
+    properties:
+      auto_scale:
+        example: true
+        type: boolean
+      created_at:
+        example: "2023-01-01T00:00:00Z"
+        type: string
+      default_env:
+        type: object
+      default_image:
+        example: browsergrid/chrome:latest
+        type: string
+      default_priority:
+        example: 0
+        type: integer
+      description:
+        example: Pool for Chrome browser workers
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      max_concurrency:
+        example: 10
+        type: integer
+      max_idle_time:
+        example: 1800
+        type: integer
+      max_session_duration:
+        example: 1800
+        type: integer
+      min_size:
+        example: 0
+        type: integer
+      name:
+        example: Chrome Workers
+        type: string
+      paused:
+        example: false
+        type: boolean
+      provider:
+        allOf:
+        - $ref: '#/definitions/ProviderType'
+        example: docker
+      queue_strategy:
+        example: fifo
+        type: string
+      updated_at:
+        example: "2023-01-01T00:00:00Z"
+        type: string
+    type: object
+  WorkPoolListResponse:
+    description: Response containing a list of work pools
+    properties:
+      pools:
+        items:
+          $ref: '#/definitions/WorkPool'
+        type: array
+      total:
+        example: 5
+        type: integer
+    type: object
+  Worker:
+    description: Worker instance that handles browser sessions
+    properties:
+      active:
+        example: 0
+        type: integer
+      hostname:
+        example: browsergrid-worker-1
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440001
+        type: string
+      last_beat:
+        example: "2023-01-01T00:00:00Z"
+        type: string
+      max_slots:
+        example: 1
+        type: integer
+      name:
+        example: worker-chrome-001
+        type: string
+      paused:
+        example: false
+        type: boolean
+      pool_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      provider:
+        allOf:
+        - $ref: '#/definitions/ProviderType'
+        example: docker
+      started_at:
+        example: "2023-01-01T00:00:00Z"
+        type: string
+    type: object
+  WorkerHeartbeatRequest:
+    description: Heartbeat data with active session count
+    properties:
+      active:
+        example: 2
+        minimum: 0
+        type: integer
+    type: object
+  WorkerListResponse:
+    description: Response containing a list of workers
+    properties:
+      total:
+        example: 10
+        type: integer
+      workers:
+        items:
+          $ref: '#/definitions/Worker'
+        type: array
+    type: object
+  WorkerPauseRequest:
+    description: Pause configuration for a worker
+    properties:
+      paused:
+        example: true
+        type: boolean
+    type: object
+externalDocs:
+  description: OpenAPI
+  url: https://swagger.io/resources/open-api/
+host: localhost:8080
+info:
+  contact:
+    email: support@swagger.io
+    name: API Support
+    url: http://www.swagger.io/support
+  description: BrowserGrid is a distributed browser automation platform that provides
+    scalable browser sessions and worker pool management.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: BrowserGrid API
+  version: "1.0"
+paths:
+  /api/v1/sessions:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of browser sessions with optional filtering by status
+        and time range
+      parameters:
+      - description: Filter by session status
+        enum:
+        - pending
+        - starting
+        - available
+        - claimed
+        - running
+        - idle
+        - completed
+        - failed
+        - expired
+        - crashed
+        - timed_out
+        - terminated
+        - pending
+        - starting
+        - available
+        - claimed
+        - running
+        - idle
+        - completed
+        - failed
+        - expired
+        - crashed
+        - timed_out
+        - terminated
+        in: query
+        name: status
+        type: string
+      - description: Filter sessions created after this time (RFC3339)
+        in: query
+        name: start_time
+        type: string
+      - description: Filter sessions created before this time (RFC3339)
+        in: query
+        name: end_time
+        type: string
+      - default: 0
+        description: Pagination offset
+        in: query
+        name: offset
+        type: integer
+      - default: 100
+        description: Pagination limit
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of sessions with pagination info
+          schema:
+            $ref: '#/definitions/SessionListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: List browser sessions
+      tags:
+      - sessions
+    post:
+      consumes:
+      - application/json
+      description: Create a new browser session with specified configuration
+      parameters:
+      - description: Session configuration
+        in: body
+        name: session
+        required: true
+        schema:
+          $ref: '#/definitions/Session'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/Session'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Create a new browser session
+      tags:
+      - sessions
+  /api/v1/sessions/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Get details of a specific browser session by ID
+      parameters:
+      - description: Session ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/Session'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Get a browser session
+      tags:
+      - sessions
+  /api/v1/sessions/{id}/events:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of session events with optional filtering by event type
+        and time range
+      parameters:
+      - description: Session ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Filter by event type
+        enum:
+        - session_created
+        - resource_allocated
+        - session_starting
+        - container_started
+        - browser_started
+        - session_available
+        - session_claimed
+        - session_assigned
+        - session_ready
+        - session_active
+        - session_idle
+        - heartbeat
+        - pool_added
+        - pool_removed
+        - pool_drained
+        - session_completed
+        - session_expired
+        - session_timed_out
+        - session_terminated
+        - startup_failed
+        - browser_crashed
+        - container_crashed
+        - resource_exhausted
+        - network_error
+        - status_changed
+        - config_updated
+        - health_check
+        in: query
+        name: event_type
+        type: string
+      - description: Filter events created after this time (RFC3339)
+        in: query
+        name: start_time
+        type: string
+      - description: Filter events created before this time (RFC3339)
+        in: query
+        name: end_time
+        type: string
+      - default: 0
+        description: Pagination offset
+        in: query
+        name: offset
+        type: integer
+      - default: 100
+        description: Pagination limit
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of events with pagination info
+          schema:
+            $ref: '#/definitions/SessionEventListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: List session events
+      tags:
+      - events
+    post:
+      consumes:
+      - application/json
+      description: Create a new event for a session (e.g., page navigation, user interaction)
+      parameters:
+      - description: Session ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Session event data
+        in: body
+        name: event
+        required: true
+        schema:
+          $ref: '#/definitions/SessionEvent'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/SessionEvent'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Create a session event
+      tags:
+      - events
+  /api/v1/sessions/{id}/metrics:
+    post:
+      consumes:
+      - application/json
+      description: Create performance metrics for a session (CPU, memory, network
+        usage)
+      parameters:
+      - description: Session ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Session metrics data
+        in: body
+        name: metrics
+        required: true
+        schema:
+          $ref: '#/definitions/SessionMetrics'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/SessionMetrics'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Create session metrics
+      tags:
+      - metrics
+  /api/v1/workers:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of all workers with optional filtering
+      parameters:
+      - description: Filter by work pool ID (UUID)
+        in: query
+        name: pool_id
+        type: string
+      - description: Filter by online status
+        in: query
+        name: online
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of workers
+          schema:
+            $ref: '#/definitions/WorkerListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: List workers
+      tags:
+      - workers
+  /api/v1/workers/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a worker from the pool
+      parameters:
+      - description: Worker ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Delete a worker
+      tags:
+      - workers
+    get:
+      consumes:
+      - application/json
+      description: Get details of a specific worker by ID
+      parameters:
+      - description: Worker ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/Worker'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Get a worker
+      tags:
+      - workers
+  /api/v1/workers/{id}/heartbeat:
+    post:
+      consumes:
+      - application/json
+      description: Update worker status with current active session count
+      parameters:
+      - description: Worker ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Heartbeat data
+        in: body
+        name: heartbeat
+        required: true
+        schema:
+          $ref: '#/definitions/WorkerHeartbeatRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Send worker heartbeat
+      tags:
+      - workers
+  /api/v1/workers/{id}/pause:
+    post:
+      consumes:
+      - application/json
+      description: Pause or resume a worker to control its availability
+      parameters:
+      - description: Worker ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Pause configuration
+        in: body
+        name: pause
+        required: true
+        schema:
+          $ref: '#/definitions/WorkerPauseRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Pause or resume a worker
+      tags:
+      - workers
+  /api/v1/workpools:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of all work pools with optional filtering
+      parameters:
+      - description: Filter by paused status
+        in: query
+        name: paused
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of work pools
+          schema:
+            $ref: '#/definitions/WorkPoolListResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: List work pools
+      tags:
+      - workpools
+    post:
+      consumes:
+      - application/json
+      description: Create a new work pool to manage browser workers
+      parameters:
+      - description: Work pool configuration
+        in: body
+        name: workpool
+        required: true
+        schema:
+          $ref: '#/definitions/WorkPool'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/WorkPool'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Create a new work pool
+      tags:
+      - workpools
+  /api/v1/workpools/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete an existing work pool and all its workers
+      parameters:
+      - description: Work Pool ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Delete a work pool
+      tags:
+      - workpools
+    get:
+      consumes:
+      - application/json
+      description: Get details of a specific work pool by ID
+      parameters:
+      - description: Work Pool ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/WorkPool'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Get a work pool
+      tags:
+      - workpools
+    patch:
+      consumes:
+      - application/json
+      description: Update configuration of an existing work pool
+      parameters:
+      - description: Work Pool ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: updates
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Update a work pool
+      tags:
+      - workpools
+  /api/v1/workpools/{id}/drain:
+    post:
+      consumes:
+      - application/json
+      description: Gracefully drain all workers from a work pool
+      parameters:
+      - description: Work Pool ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Drain a work pool
+      tags:
+      - workpools
+  /api/v1/workpools/{id}/scale:
+    post:
+      consumes:
+      - application/json
+      description: Update scaling parameters for a work pool
+      parameters:
+      - description: Work Pool ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Scaling parameters
+        in: body
+        name: scaling
+        required: true
+        schema:
+          $ref: '#/definitions/ScalingRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Scaling operation result
+          schema:
+            $ref: '#/definitions/ScalingResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Scale a work pool
+      tags:
+      - workpools
+  /api/v1/workpools/{id}/stats:
+    get:
+      consumes:
+      - application/json
+      description: Get detailed statistics and metrics for a specific work pool
+      parameters:
+      - description: Work Pool ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Work pool statistics
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Get work pool statistics
+      tags:
+      - pool-management
+securityDefinitions:
+  BasicAuth:
+    type: basic
+swagger: "2.0"

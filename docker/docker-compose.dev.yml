@@ -1,0 +1,56 @@
+# docker/docker-compose.dev.yml - Development overlay with Air hot reloading
+services:
+  server:
+    build:
+      context: ..
+      dockerfile: docker/server/Dockerfile.dev
+      target: dev                # Use the dev stage with Air
+    volumes:
+      # Live-mount source so Air rebuilds instantly
+      - ../browsergrid:/app/browsergrid:cached
+      - ../browsergrid/migrations:/migrations:cached
+      - ../.air.toml:/app/.air.toml:ro
+      # Cache Go modules for faster rebuilds
+      - go_mod_cache:/go/pkg/mod
+    environment:
+      - BROWSERGRID_ENV=dev
+      - BROWSERGRID_POSTGRES_HOST=db
+      - BROWSERGRID_POSTGRES_PORT=5432
+      - BROWSERGRID_POSTGRES_USER=${BROWSERGRID_POSTGRES_USER:-browsergrid}
+      - BROWSERGRID_POSTGRES_PASSWORD=${BROWSERGRID_POSTGRES_PASSWORD:-browsergrid}
+      - BROWSERGRID_POSTGRES_DB=${BROWSERGRID_POSTGRES_DB:-browsergrid}
+      - BROWSERGRID_API_PORT=${BROWSERGRID_API_PORT:-8765}
+    # Override healthcheck for dev (Air takes longer to start)
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8765/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/worker/Dockerfile.dev
+      target: dev                # Use the dev stage with Air
+    volumes:
+      # Live-mount source so Air rebuilds instantly
+      - ../browsergrid:/app/browsergrid:cached
+      - ../.air.worker.toml:/app/.air.toml:ro
+      # Cache Go modules for faster rebuilds
+      - go_mod_cache:/go/pkg/mod
+      # Mount Docker socket for Docker provider
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - BROWSERGRID_POSTGRES_HOST=db
+      - BROWSERGRID_POSTGRES_PORT=5432
+      - BROWSERGRID_POSTGRES_USER=${BROWSERGRID_POSTGRES_USER:-browsergrid}
+      - BROWSERGRID_POSTGRES_PASSWORD=${BROWSERGRID_POSTGRES_PASSWORD:-browsergrid}
+      - BROWSERGRID_POSTGRES_DB=${BROWSERGRID_POSTGRES_DB:-browsergrid}
+      - BROWSERGRID_WORKER_NAME=${BROWSERGRID_WORKER_NAME:-worker-docker-dev}
+      - BROWSERGRID_WORKER_PROVIDER=${BROWSERGRID_WORKER_PROVIDER:-docker}
+      - BROWSERGRID_WORKER_CONCURRENCY=${BROWSERGRID_WORKER_CONCURRENCY:-2}
+      - BROWSERGRID_WORKER_POLL_INTERVAL=${BROWSERGRID_WORKER_POLL_INTERVAL:-10s}
+
+volumes:
+  go_mod_cache: 

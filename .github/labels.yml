@@ -1,0 +1,44 @@
+# GitHub issue and PR labels configuration
+# These labels can be created with github-label-sync or similar tools
+
+# Versioning labels
+- name: "major"
+  description: "Introduces breaking changes (major version bump)"
+  color: "b60205"
+
+- name: "minor"
+  description: "New features or non-breaking improvements"
+  color: "0075ca"
+  
+- name: "patch"
+  description: "Bug fixes or minor improvements"
+  color: "d73a4a"
+
+- name: "versioning"
+  description: "Related to semantic versioning"
+  color: "fbca04"
+
+# Issue type labels
+- name: "bug"
+  description: "Something isn't working"
+  color: "d73a4a"
+  
+- name: "feature"
+  description: "New feature or request"
+  color: "a2eeef"
+  
+- name: "documentation"
+  description: "Improvements or additions to documentation"
+  color: "0075ca"
+  
+- name: "enhancement"
+  description: "Improvement to existing features"
+  color: "a2eeef"
+  
+- name: "good first issue"
+  description: "Good for newcomers"
+  color: "7057ff"
+  
+- name: "help wanted"
+  description: "Extra attention is needed"
+  color: "008672" 

@@ -1,0 +1,73 @@
+# Development Dockerfile with Air hot reloading
+FROM golang:1.23-alpine AS base
+
+WORKDIR /app
+
+# Install git for fetching dependencies
+RUN apk add --no-cache git ca-certificates netcat-openbsd curl
+
+# Copy go mod files
+COPY browsergrid/go.mod browsergrid/go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY browsergrid/ ./
+
+# ─── production builder (unchanged) ───────────────────────────────────────
+FROM base AS builder
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o api ./cmd/api
+
+# ─── production final (unchanged) ─────────────────────────────────────────
+FROM alpine:latest AS prod
+# Install ca-certificates for HTTPS requests, netcat for database waiting, and Atlas CLI
+RUN apk --no-cache add ca-certificates netcat-openbsd curl && \
+    curl -sSf https://atlasgo.sh | sh -s -- -b /usr/local/bin
+
+WORKDIR /root/
+
+# Copy the binary from builder stage
+COPY --from=builder /app/api .
+
+# Copy migrations directory
+COPY browsergrid/migrations /migrations
+
+# Copy entrypoint script
+COPY docker/server/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Expose the API port
+EXPOSE 8765
+
+# Run the API server
+ENTRYPOINT ["/entrypoint.sh"]
+
+# ─── dev stage (NEW) – installs Air and starts it by default ─────────────
+FROM base AS dev
+
+# Install Atlas CLI for migrations in dev mode
+RUN curl -sSf https://atlasgo.sh | sh -s -- -b /usr/local/bin
+
+# Install Air using the install script to avoid Go version issues
+RUN curl -fsSL https://raw.githubusercontent.com/air-verse/air/master/install.sh | \
+    sh -s -- -b /usr/local/bin
+
+# Copy Air configuration
+COPY .air.toml /app/.air.toml
+
+# Copy migrations directory for dev mode
+COPY browsergrid/migrations /migrations
+
+# Copy development entrypoint script
+COPY docker/server/entrypoint.dev.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Create tmp directory for Air builds
+RUN mkdir -p /app/tmp
+
+# Expose the API port
+EXPOSE 8765
+
+# Use development entrypoint that handles migrations and starts Air
+ENTRYPOINT ["/entrypoint.sh"] 

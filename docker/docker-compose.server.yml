@@ -1,0 +1,88 @@
+name: browsergrid-server
+services:
+  db:
+    container_name: browsergrid-db
+    image: postgres:17-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    env_file:
+      - ../.env
+    environment:
+      - POSTGRES_USER=${BROWSERGRID_POSTGRES_USER:-browsergrid}
+      - POSTGRES_PASSWORD=${BROWSERGRID_POSTGRES_PASSWORD:-browsergrid}
+      - POSTGRES_DB=${BROWSERGRID_POSTGRES_DB:-browsergrid}
+    ports:
+      - "${BROWSERGRID_POSTGRES_PORT:-5432}:5432"
+    networks:
+      - browsergrid_server
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U browsergrid -d browsergrid"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+  
+  redis:
+    container_name: browsergrid-redis
+    image: redis:latest
+    ports:
+      - "${BROWSERGRID_REDIS_PORT:-6379}:6379"
+    networks:
+      - browsergrid_server  
+      
+  server:
+    container_name: browsergrid-server
+    build:
+      context: ..
+      dockerfile: docker/server/Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      - BROWSERGRID_ENV=dev
+      - BROWSERGRID_POSTGRES_HOST=db
+      - BROWSERGRID_POSTGRES_PORT=5432
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${BROWSERGRID_API_PORT:-8765}:8765"
+    networks:
+      - browsergrid_server
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8765/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  worker:
+    container_name: browsergrid-worker
+    build:
+      context: ..
+      dockerfile: docker/worker/Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      - BROWSERGRID_POSTGRES_HOST=db
+      - BROWSERGRID_POSTGRES_PORT=5432
+      # - BROWSERGRID_WORKER_POOL_ID=${BROWSERGRID_WORKER_POOL_ID}  # Optional - will create default pool
+      - BROWSERGRID_WORKER_NAME=${BROWSERGRID_WORKER_NAME:-worker-docker}
+      - BROWSERGRID_WORKER_PROVIDER=${BROWSERGRID_WORKER_PROVIDER:-docker}
+      - BROWSERGRID_WORKER_CONCURRENCY=${BROWSERGRID_WORKER_CONCURRENCY:-2}
+      - BROWSERGRID_WORKER_POLL_INTERVAL=${BROWSERGRID_WORKER_POLL_INTERVAL:-10s}
+    depends_on:
+      db:
+        condition: service_healthy
+      server:
+        condition: service_healthy
+    networks:
+      - browsergrid_server
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock  # For Docker provider
+    restart: unless-stopped
+
+networks:
+  browsergrid_server:
+    name: browsergrid_server
+
+volumes:
+  postgres_data: 

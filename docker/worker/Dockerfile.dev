@@ -1,0 +1,57 @@
+# Development Dockerfile with Air hot reloading for worker
+FROM golang:1.23-alpine AS base
+
+WORKDIR /app
+
+# Install git for fetching dependencies
+RUN apk add --no-cache git ca-certificates netcat-openbsd curl
+
+# Copy go mod files
+COPY browsergrid/go.mod browsergrid/go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY browsergrid/ ./
+
+# ─── production builder (unchanged) ───────────────────────────────────────
+FROM base AS builder
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o worker ./cmd/worker
+
+# ─── production final (unchanged) ─────────────────────────────────────────
+FROM alpine:latest AS prod
+# Install ca-certificates for HTTPS requests and netcat for database waiting
+RUN apk --no-cache add ca-certificates netcat-openbsd
+
+WORKDIR /root/
+
+# Copy the binary from builder stage
+COPY --from=builder /app/worker .
+
+# Copy entrypoint script
+COPY docker/worker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Run the worker
+ENTRYPOINT ["/entrypoint.sh"]
+
+# ─── dev stage (NEW) – installs Air and starts it by default ─────────────
+FROM base AS dev
+
+# Install Air using the install script to avoid Go version issues
+RUN curl -fsSL https://raw.githubusercontent.com/air-verse/air/master/install.sh | \
+    sh -s -- -b /usr/local/bin
+
+# Copy Air configuration for worker
+COPY .air.worker.toml /app/.air.toml
+
+# Copy development entrypoint script
+COPY docker/worker/entrypoint.dev.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Create tmp directory for Air builds
+RUN mkdir -p /app/tmp
+
+# Use development entrypoint that starts Air
+ENTRYPOINT ["/entrypoint.sh"] 
