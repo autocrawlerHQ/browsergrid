@@ -19,16 +19,21 @@ The easiest way to get started is to let BrowserGrid automatically create defaul
 
 1. **Start the server and worker without specifying a pool ID:**
    ```bash
+   # build the browser images
+   make browser build # chrome default
+   make browser BROWSER=firefox build
+   ```
+   ```bash
    # Start the server
-   docker compose -f docker/docker-compose.server.yml up -d
+   make server up
    ```
 
-2. **The worker will automatically:**
+3. **The worker will automatically:**
    - Create a default workpool named `default-{provider}` (e.g., `default-docker`)
    - Register itself to that pool
    - Start processing browser sessions
 
-3. **Multiple workers with the same provider will share the same default pool**, enabling proper load balancing and capacity management.
+4. **Multiple workers with the same provider will share the same default pool**, enabling proper load balancing and capacity management.
 
 ### Manual Workpool Configuration
 
