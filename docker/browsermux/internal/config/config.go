@@ -39,7 +39,7 @@ func Load() (*Config, error) {
 	if browserURL := os.Getenv("BROWSER_URL"); browserURL != "" {
 		config.BrowserURL = browserURL
 	} else {
-		config.BrowserURL = "http://localhost:9222"
+		config.BrowserURL = "http://localhost:6100"
 	}
 
 	if frontendURL := os.Getenv("FRONTEND_URL"); frontendURL != "" {

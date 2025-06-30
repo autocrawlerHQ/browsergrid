@@ -7,13 +7,11 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/gorilla/websocket"
 
 	"browsermux/internal/api/middleware"
 	"browsermux/internal/browser"
@@ -517,148 +515,5 @@ func (s *Server) rewriteWebSocketURLs(data map[string]interface{}) {
 				data[key] = newVal
 			}
 		}
-	}
-}
-
-// handleVNCProxy handles proxying VNC requests to the browser container
-func (s *Server) handleVNCProxy(w http.ResponseWriter, r *http.Request) {
-	// Strip /vnc prefix from the path
-	targetPath := strings.TrimPrefix(r.URL.Path, "/vnc")
-	if targetPath == "" {
-		targetPath = "/"
-	}
-
-	// Check if this is a WebSocket upgrade request
-	if websocket.IsWebSocketUpgrade(r) {
-		s.handleVNCWebSocket(w, r, targetPath)
-		return
-	}
-
-	// Handle regular HTTP requests
-	targetURL, err := url.Parse(s.vncBaseURL + targetPath)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error parsing VNC URL: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	// Preserve query parameters
-	targetURL.RawQuery = r.URL.RawQuery
-
-	// Create reverse proxy
-	proxy := httputil.NewSingleHostReverseProxy(targetURL)
-
-	// Modify the request
-	proxy.Director = func(req *http.Request) {
-		req.URL.Scheme = targetURL.Scheme
-		req.URL.Host = targetURL.Host
-		req.URL.Path = targetPath
-		req.URL.RawQuery = r.URL.RawQuery
-		req.Host = targetURL.Host
-
-		// Copy headers
-		for key, values := range r.Header {
-			for _, value := range values {
-				req.Header.Add(key, value)
-			}
-		}
-	}
-
-	// Handle errors
-	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		log.Printf("VNC proxy error: %v", err)
-		http.Error(w, fmt.Sprintf("VNC proxy error: %v", err), http.StatusBadGateway)
-	}
-
-	proxy.ServeHTTP(w, r)
-}
-
-// handleVNCWebSocket handles WebSocket connections for VNC
-func (s *Server) handleVNCWebSocket(w http.ResponseWriter, r *http.Request, targetPath string) {
-	// Parse the target WebSocket URL
-	vncWSURL := strings.Replace(s.vncBaseURL, "http://", "ws://", 1)
-	vncWSURL = strings.Replace(vncWSURL, "https://", "wss://", 1)
-
-	targetURL := vncWSURL + targetPath
-	if r.URL.RawQuery != "" {
-		targetURL += "?" + r.URL.RawQuery
-	}
-
-	// Connect to the VNC server
-	dialer := websocket.Dialer{
-		HandshakeTimeout: 10 * time.Second,
-	}
-
-	// Copy headers for the upstream connection
-	headers := http.Header{}
-	for key, values := range r.Header {
-		if key != "Connection" && key != "Upgrade" && key != "Sec-Websocket-Key" &&
-			key != "Sec-Websocket-Version" && key != "Sec-Websocket-Extensions" {
-			for _, value := range values {
-				headers.Add(key, value)
-			}
-		}
-	}
-
-	upstreamConn, _, err := dialer.Dial(targetURL, headers)
-	if err != nil {
-		log.Printf("Failed to connect to VNC WebSocket: %v", err)
-		http.Error(w, fmt.Sprintf("Failed to connect to VNC: %v", err), http.StatusBadGateway)
-		return
-	}
-	defer upstreamConn.Close()
-
-	// Upgrade the client connection
-	upgrader := websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool {
-			return true // Allow all origins for VNC
-		},
-	}
-
-	clientConn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Printf("Failed to upgrade client connection: %v", err)
-		return
-	}
-	defer clientConn.Close()
-
-	// Proxy messages between client and VNC server
-	errChan := make(chan error, 2)
-
-	// Client to VNC server
-	go func() {
-		for {
-			messageType, data, err := clientConn.ReadMessage()
-			if err != nil {
-				errChan <- fmt.Errorf("client read error: %v", err)
-				return
-			}
-
-			if err := upstreamConn.WriteMessage(messageType, data); err != nil {
-				errChan <- fmt.Errorf("upstream write error: %v", err)
-				return
-			}
-		}
-	}()
-
-	// VNC server to client
-	go func() {
-		for {
-			messageType, data, err := upstreamConn.ReadMessage()
-			if err != nil {
-				errChan <- fmt.Errorf("upstream read error: %v", err)
-				return
-			}
-
-			if err := clientConn.WriteMessage(messageType, data); err != nil {
-				errChan <- fmt.Errorf("client write error: %v", err)
-				return
-			}
-		}
-	}()
-
-	// Wait for an error or connection close
-	select {
-	case err := <-errChan:
-		log.Printf("VNC WebSocket proxy error: %v", err)
 	}
 }

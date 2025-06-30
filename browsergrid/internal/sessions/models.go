@@ -128,8 +128,8 @@ type Session struct {
 	Provider         string  `json:"provider" example:"local"`
 	WebhooksEnabled  bool    `json:"webhooks_enabled" example:"false"`
 
-	WSEndpoint *string `json:"ws_endpoint,omitempty" example:"ws://localhost:9222/devtools/browser"`
-	LiveURL    *string `json:"live_url,omitempty" example:"http://localhost:7900"`
+	WSEndpoint *string `json:"ws_endpoint,omitempty" example:"ws://localhost:80/devtools/browser"`
+	LiveURL    *string `json:"live_url,omitempty" example:"http://localhost:80"`
 
 	WorkerID   *uuid.UUID `json:"worker_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440001"`
 	WorkPoolID *uuid.UUID `json:"work_pool_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440002"`

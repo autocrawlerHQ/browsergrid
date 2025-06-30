@@ -12,7 +12,6 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -25,9 +24,7 @@ import (
 const (
 	testTimeout      = 30 * time.Second
 	testImageBrowser = "browsergrid/chrome:latest"
-	testImageMux     = "browsergrid/browsermux:latest"
-	testPortDev      = 9222
-	testPortMux      = 8080
+	testPort         = 80
 )
 
 func createIntegrationTestSession() *sessions.Session {
@@ -58,11 +55,9 @@ func createTestProvisioner(t *testing.T) *DockerProvisioner {
 	require.NoError(t, err, "Docker daemon should be running for integration tests")
 
 	return &DockerProvisioner{
-		cli:             cli,
-		imageBrowserMux: testImageMux,
-		defaultPortDev:  testPortDev,
-		defaultPortMux:  testPortMux,
-		healthTimeout:   10 * time.Second,
+		cli:           cli,
+		defaultPort:   testPort,
+		healthTimeout: 10 * time.Second,
 	}
 }
 
@@ -70,11 +65,8 @@ func ensureTestImages(t *testing.T, p *DockerProvisioner) {
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 	defer cancel()
 
-	images := []string{testImageBrowser, testImageMux}
-	for _, img := range images {
-		err := p.ensureImage(ctx, img)
-		require.NoError(t, err, "Should be able to pull test image: %s", img)
-	}
+	err := p.ensureImage(ctx, testImageBrowser)
+	require.NoError(t, err, "Should be able to pull test image: %s", testImageBrowser)
 }
 
 func cleanupContainers(t *testing.T, cli *client.Client, sessionID uuid.UUID) {
@@ -97,11 +89,6 @@ func cleanupContainers(t *testing.T, cli *client.Client, sessionID uuid.UUID) {
 		_ = cli.ContainerRemove(ctx, c.ID, container.RemoveOptions{Force: true})
 		t.Logf("Cleaned up container: %s", c.ID[:12])
 	}
-
-	shortID := sessionID.String()[:8]
-	networkName := "bg-" + shortID
-	_ = cli.NetworkRemove(ctx, networkName)
-	t.Logf("Cleaned up network: %s", networkName)
 }
 
 func TestDockerProvisionerIntegration(t *testing.T) {
@@ -127,7 +114,7 @@ func TestDockerProvisionerIntegration(t *testing.T) {
 		assert.Contains(t, liveURL, "http://localhost:", "Live URL should be localhost")
 
 		assert.NotNil(t, sess.ContainerID, "Session should have container ID")
-		assert.NotNil(t, sess.ContainerNetwork, "Session should have container network")
+		// ContainerNetwork is not set in single-container mode
 		assert.NotNil(t, sess.WSEndpoint, "Session should have WS endpoint")
 		assert.NotNil(t, sess.LiveURL, "Session should have live URL")
 
@@ -139,24 +126,12 @@ func TestDockerProvisionerIntegration(t *testing.T) {
 				Filters: filterArgs,
 			})
 			require.NoError(t, err, "Should be able to list containers")
-			assert.Len(t, containers, 2, "Should have 2 containers (browser + mux)")
+			assert.Len(t, containers, 1, "Should have 1 container")
 
 			for _, c := range containers {
 				assert.Equal(t, "running", c.State, "Container should be running")
 				assert.Contains(t, c.Labels, "com.browsergrid.session", "Container should have session label")
 			}
-		})
-
-		t.Run("NetworkExists", func(t *testing.T) {
-			filterArgs := filters.NewArgs()
-			filterArgs.Add("name", *sess.ContainerNetwork)
-
-			networks, err := provisioner.cli.NetworkList(ctx, network.ListOptions{
-				Filters: filterArgs,
-			})
-			require.NoError(t, err, "Should be able to list networks")
-			assert.Len(t, networks, 1, "Should have created network")
-			assert.Equal(t, *sess.ContainerNetwork, networks[0].Name, "Network name should match")
 		})
 
 		t.Run("PortsAccessible", func(t *testing.T) {
@@ -174,8 +149,16 @@ func TestDockerProvisionerIntegration(t *testing.T) {
 		})
 
 		t.Run("HealthCheck", func(t *testing.T) {
-			err := provisioner.HealthCheck(ctx, sess)
-			assert.NoError(t, err, "HealthCheck should succeed with BrowserMux")
+			// Give the container time to fully start up
+			var hcErr error
+			for i := 0; i < 5; i++ {
+				hcErr = provisioner.HealthCheck(ctx, sess)
+				if hcErr == nil {
+					break
+				}
+				time.Sleep(1 * time.Second)
+			}
+			assert.NoError(t, hcErr, "HealthCheck should eventually succeed")
 		})
 
 		t.Run("GetMetrics", func(t *testing.T) {
@@ -242,19 +225,8 @@ func TestDockerProvisionerIntegration(t *testing.T) {
 				t.Logf("All containers successfully stopped")
 			}
 
-			filterArgs = filters.NewArgs()
-			filterArgs.Add("name", *sess.ContainerNetwork)
-
-			networks, err := provisioner.cli.NetworkList(ctx, network.ListOptions{
-				Filters: filterArgs,
-			})
-			require.NoError(t, err, "Should be able to list networks after stop")
-
-			if len(networks) > 0 {
-				t.Logf("Network still exists after stop (this is normal for Docker): %s", *sess.ContainerNetwork)
-			} else {
-				t.Logf("Network successfully cleaned up: %s", *sess.ContainerNetwork)
-			}
+			// No dedicated container network in single-container mode, so no
+			// network-cleanup assertions are required.
 		})
 	})
 }
@@ -273,9 +245,9 @@ func TestDockerProvisionerStartFailures(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		defer cancel()
 
-		originalImage := provisioner.imageBrowserMux
-		provisioner.imageBrowserMux = "nonexistent:invalid"
-		defer func() { provisioner.imageBrowserMux = originalImage }()
+		// Use an invalid browser type to generate a non-existent image
+		sess.Browser = sessions.BrowserChrome
+		sess.Version = sessions.BrowserVersion("nonexistent-invalid-version")
 
 		_, _, err := provisioner.Start(ctx, sess)
 		assert.Error(t, err, "Should fail with invalid image")
@@ -318,7 +290,7 @@ func TestDockerProvisionerStopIdempotency(t *testing.T) {
 	}
 }
 
-func TestDockerProvisionerNetworkIsolation(t *testing.T) {
+func TestDockerProvisionerContainerIsolation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration tests in short mode")
 	}
@@ -341,26 +313,8 @@ func TestDockerProvisionerNetworkIsolation(t *testing.T) {
 	_, _, err2 := provisioner.Start(ctx, sess2)
 	require.NoError(t, err2, "Session 2 should start")
 
-	assert.NotEqual(t, sess1.ContainerNetwork, sess2.ContainerNetwork,
-		"Sessions should have different networks")
-
-	filterArgs1 := filters.NewArgs()
-	filterArgs1.Add("name", *sess1.ContainerNetwork)
-
-	networks1, err := provisioner.cli.NetworkList(ctx, network.ListOptions{
-		Filters: filterArgs1,
-	})
-	require.NoError(t, err, "Should list session 1 network")
-	assert.Len(t, networks1, 1, "Session 1 should have its network")
-
-	filterArgs2 := filters.NewArgs()
-	filterArgs2.Add("name", *sess2.ContainerNetwork)
-
-	networks2, err := provisioner.cli.NetworkList(ctx, network.ListOptions{
-		Filters: filterArgs2,
-	})
-	require.NoError(t, err, "Should list session 2 network")
-	assert.Len(t, networks2, 1, "Session 2 should have its network")
+	assert.NotEqual(t, sess1.ContainerID, sess2.ContainerID,
+		"Sessions should have different container IDs")
 
 	require.NoError(t, provisioner.Stop(ctx, sess1), "Should stop session 1")
 	require.NoError(t, provisioner.Stop(ctx, sess2), "Should stop session 2")

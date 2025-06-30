@@ -17,7 +17,7 @@ import (
 )
 
 func main() {
-	log.Println("Starting BrowserFleet CDP Proxy...")
+	log.Println("Starting Browsergrid CDP Proxy...")
 
 	cfg := loadConfig()
 

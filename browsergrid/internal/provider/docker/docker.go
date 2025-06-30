@@ -14,7 +14,6 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/google/uuid"
@@ -27,10 +26,8 @@ import (
 type DockerProvisioner struct {
 	cli *client.Client
 
-	imageBrowserMux string
-	defaultPortDev  int
-	defaultPortMux  int
-	healthTimeout   time.Duration
+	defaultPort   int
+	healthTimeout time.Duration
 }
 
 func NewDockerProvisioner() *DockerProvisioner {
@@ -40,11 +37,9 @@ func NewDockerProvisioner() *DockerProvisioner {
 	}
 
 	return &DockerProvisioner{
-		cli:             cli,
-		imageBrowserMux: "browsergrid/browsermux:latest",
-		defaultPortDev:  9222,
-		defaultPortMux:  8080,
-		healthTimeout:   10 * time.Second,
+		cli:           cli,
+		defaultPort:   80,
+		healthTimeout: 10 * time.Second,
 	}
 }
 
@@ -61,28 +56,19 @@ func (p *DockerProvisioner) Start(
 	sess *sessions.Session,
 ) (wsURL, liveURL string, err error) {
 	shortID := sess.ID.String()[:8]
-	networkName := "bg-" + shortID
 
 	browserImage := fmt.Sprintf("browsergrid/%s:%s",
 		string(sess.Browser), defaultStr(string(sess.Version), "latest"))
 
-	for _, img := range []string{browserImage, p.imageBrowserMux} {
-		if err := p.ensureImage(ctx, img); err != nil {
-			return "", "", err
-		}
-	}
-
-	var containerNetwork string
-	if err := p.createNetwork(ctx, networkName); err != nil {
+	if err := p.ensureImage(ctx, browserImage); err != nil {
 		return "", "", err
 	}
-	containerNetwork = networkName
 
 	browserCName := "bg-browser-" + shortID
 	browserEnv := []string{
 		fmt.Sprintf("HEADLESS=%t", sess.Headless),
-		fmt.Sprintf("DISPLAY_WIDTH=%d", sess.Screen.Width),
-		fmt.Sprintf("DISPLAY_HEIGHT=%d", sess.Screen.Height),
+		fmt.Sprintf("RESOLUTION_WIDTH=%d", sess.Screen.Width),
+		fmt.Sprintf("RESOLUTION_HEIGHT=%d", sess.Screen.Height),
 	}
 	var envMap map[string]string
 	if sess.Environment != nil {
@@ -102,81 +88,30 @@ func (p *DockerProvisioner) Start(
 			},
 			Hostname: "browser",
 			ExposedPorts: natSet(
-				fmt.Sprintf("%d/tcp", p.defaultPortDev),
+				fmt.Sprintf("%d/tcp", p.defaultPort),
 			),
 		},
 		&container.HostConfig{
-			AutoRemove:      false,
-			PublishAllPorts: false,
-			Tmpfs:           map[string]string{"/dev/shm": "rw,size=2g"},
+			AutoRemove:   false,
+			PortBindings: natMap(p.defaultPort, 0),
+			Tmpfs:        map[string]string{"/dev/shm": "rw,size=2g"},
 		},
-		&network.NetworkingConfig{
-			EndpointsConfig: map[string]*network.EndpointSettings{
-				networkName: {Aliases: []string{"browser"}},
-			},
-		},
+		nil,
 		nil,
 		browserCName,
 	)
 	if err != nil {
-		_ = p.cli.NetworkRemove(ctx, networkName)
 		return "", "", fmt.Errorf("create browser container: %w", err)
 	}
 
-	muxCName := "bg-mux-" + shortID
-	muxEnv := []string{
-		fmt.Sprintf("PORT=%d", p.defaultPortMux),
-		fmt.Sprintf("BROWSER_URL=http://localhost:%d", p.defaultPortDev),
-	}
-
-	muxResp, err := p.cli.ContainerCreate(ctx,
-		&container.Config{
-			Image: p.imageBrowserMux,
-			Env:   muxEnv,
-			Labels: map[string]string{
-				"com.browsergrid.session": sess.ID.String(),
-			},
-			ExposedPorts: natSet(
-				fmt.Sprintf("%d/tcp", p.defaultPortMux),
-			),
-		},
-		&container.HostConfig{
-			AutoRemove: false,
-			PortBindings: natMap(
-				p.defaultPortMux, 0),
-		},
-		&network.NetworkingConfig{
-			EndpointsConfig: map[string]*network.EndpointSettings{
-				networkName: {},
-			},
-		},
-		nil,
-		muxCName,
-	)
-	if err != nil {
-		if !p.keepContainers() {
-			_ = p.cli.ContainerRemove(ctx, browserResp.ID, container.RemoveOptions{Force: true})
-		}
-		_ = p.cli.NetworkRemove(ctx, networkName)
-		return "", "", fmt.Errorf("create mux container: %w", err)
-	}
-
 	if err := p.cli.ContainerStart(ctx, browserResp.ID, container.StartOptions{}); err != nil {
-		return p.abortStart(ctx, containerNetwork, browserResp.ID, muxResp.ID, fmt.Errorf("start browser: %w", err))
+		return p.abortStart(ctx, browserResp.ID, fmt.Errorf("start browser: %w", err))
 	}
 
-	// Wait for browser to be healthy before starting mux
-	if err := p.waitForBrowser(ctx, browserResp.ID); err != nil {
-		return p.abortStart(ctx, containerNetwork, browserResp.ID, muxResp.ID, err)
-	}
-
-	if err := p.cli.ContainerStart(ctx, muxResp.ID, container.StartOptions{}); err != nil {
-		return p.abortStart(ctx, containerNetwork, browserResp.ID, muxResp.ID, fmt.Errorf("start mux: %w", err))
-	}
-
-	hostPort, err := p.waitForMux(ctx, muxResp.ID)
+	// Wait for browser to be healthy
+	hostPort, err := p.waitForContainer(ctx, browserResp.ID)
 	if err != nil {
-		return p.abortStart(ctx, containerNetwork, browserResp.ID, muxResp.ID, err)
+		return p.abortStart(ctx, browserResp.ID, err)
 	}
 
 	// Use host-mapped address that is reachable from inside a container
@@ -186,7 +121,6 @@ func (p *DockerProvisioner) Start(
 	}
 
 	sess.ContainerID = &browserResp.ID
-	sess.ContainerNetwork = &containerNetwork
 	sess.WSEndpoint = strPtr(fmt.Sprintf("ws://%s:%d", hostName, hostPort))
 	sess.LiveURL = strPtr(fmt.Sprintf("http://%s:%d", hostName, hostPort))
 
@@ -195,11 +129,6 @@ func (p *DockerProvisioner) Start(
 
 func (p *DockerProvisioner) Stop(ctx context.Context, sess *sessions.Session) error {
 	if sess.ContainerID != nil {
-		// Remove network first
-		if sess.ContainerNetwork != nil {
-			_ = p.cli.NetworkRemove(ctx, *sess.ContainerNetwork)
-		}
-
 		// Find all containers with the session label and remove them
 		filterArgs := filters.NewArgs()
 		filterArgs.Add("label", fmt.Sprintf("com.browsergrid.session=%s", sess.ID.String()))
@@ -288,22 +217,11 @@ func (p *DockerProvisioner) ensureImage(ctx context.Context, imageName string) e
 	return nil
 }
 
-func (p *DockerProvisioner) createNetwork(ctx context.Context, name string) error {
-	_, err := p.cli.NetworkCreate(ctx, name, network.CreateOptions{
-		Driver:     "bridge",
-		Attachable: true,
-	})
-	if err != nil && strings.Contains(err.Error(), "already exists") {
-		return nil
-	}
-	return err
-}
-
-func (p *DockerProvisioner) waitForMux(ctx context.Context, muxID string) (hostPort int, err error) {
+func (p *DockerProvisioner) waitForContainer(ctx context.Context, containerID string) (hostPort int, err error) {
 	deadline := time.Now().Add(p.healthTimeout)
 
 	for time.Now().Before(deadline) {
-		inspect, err := p.cli.ContainerInspect(ctx, muxID)
+		inspect, err := p.cli.ContainerInspect(ctx, containerID)
 		if err != nil {
 			return 0, err
 		}
@@ -315,7 +233,7 @@ func (p *DockerProvisioner) waitForMux(ctx context.Context, muxID string) (hostP
 		}
 
 		for pc := range inspect.NetworkSettings.Ports {
-			if pc.Int() == p.defaultPortMux && len(inspect.NetworkSettings.Ports[pc]) > 0 {
+			if pc.Int() == p.defaultPort && len(inspect.NetworkSettings.Ports[pc]) > 0 {
 				hostPortStr := inspect.NetworkSettings.Ports[pc][0].HostPort
 				hostPort, _ := strconv.Atoi(hostPortStr)
 				if hostPort > 0 {
@@ -327,49 +245,17 @@ func (p *DockerProvisioner) waitForMux(ctx context.Context, muxID string) (hostP
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	return 0, fmt.Errorf("browsermux did not become ready within %s", p.healthTimeout)
-}
-
-func (p *DockerProvisioner) waitForBrowser(ctx context.Context, browserID string) error {
-	deadline := time.Now().Add(p.healthTimeout)
-
-	for time.Now().Before(deadline) {
-		inspect, err := p.cli.ContainerInspect(ctx, browserID)
-		if err != nil {
-			return fmt.Errorf("inspect browser container: %w", err)
-		}
-
-		// Check if container is running and healthy
-		if inspect.State.Running {
-			if inspect.State.Health != nil {
-				if inspect.State.Health.Status == "healthy" {
-					return nil
-				}
-			} else {
-				// If no health check defined, just check if it's been running for a bit
-				if startedAt, err := time.Parse(time.RFC3339Nano, inspect.State.StartedAt); err == nil {
-					if time.Since(startedAt) > 2*time.Second {
-						return nil
-					}
-				}
-			}
-		}
-
-		time.Sleep(200 * time.Millisecond)
-	}
-	return fmt.Errorf("browser did not become healthy within %s", p.healthTimeout)
+	return 0, fmt.Errorf("browser container did not become ready within %s", p.healthTimeout)
 }
 
 func (p *DockerProvisioner) abortStart(
 	ctx context.Context,
-	netName, browserID, muxID string,
+	browserID string,
 	rootErr error,
 ) (string, string, error) {
 	if !p.keepContainers() {
 		_ = p.cli.ContainerRemove(ctx, browserID, container.RemoveOptions{Force: true})
-		_ = p.cli.ContainerRemove(ctx, muxID, container.RemoveOptions{Force: true})
 	}
-	_ = p.cli.NetworkRemove(ctx, netName)
 	return "", "", rootErr
 }
 

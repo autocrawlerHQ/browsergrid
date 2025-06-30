@@ -129,7 +129,7 @@ Webhooks can be configured to trigger either before or after CDP events.
 
 BrowserMux can be configured using environment variables:
 
-- `BROWSER_URL`: WebSocket URL of the browser (default: `ws://localhost:9222/devtools/browser`)
+- `BROWSER_URL`: WebSocket URL of the browser (default: `ws://localhost:6100/devtools/browser`)
 - `PORT`: Port to listen on (default: `8080`)
 - `MAX_MESSAGE_SIZE`: Maximum size of WebSocket messages in bytes (default: `1048576`)
 - `CONNECTION_TIMEOUT`: Timeout for browser connections in seconds (default: `10`)
