@@ -126,7 +126,7 @@ func (p *DockerProvisioner) Start(
 	muxCName := "bg-mux-" + shortID
 	muxEnv := []string{
 		fmt.Sprintf("PORT=%d", p.defaultPortMux),
-		fmt.Sprintf("BROWSER_URL=http://browser:%d", p.defaultPortDev),
+		fmt.Sprintf("BROWSER_URL=http://localhost:%d", p.defaultPortDev),
 	}
 
 	muxResp, err := p.cli.ContainerCreate(ctx,

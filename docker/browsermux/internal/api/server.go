@@ -1,7 +1,5 @@
 package api
 
-// TODO: reconnection is broken, we the browser disconnect/ shuts down, when we reconnect our user automation client hangs
-// TODO: need to fix this
 import (
 	"context"
 	"encoding/json"
@@ -31,8 +29,7 @@ type Server struct {
 	webhookManager  webhook.Manager
 	eventDispatcher events.Dispatcher
 	browserBaseURL  string
-	vncBaseURL      string
-	serverBaseURL   string
+	frontendBaseURL string
 	config          *config.Config
 }
 
@@ -55,13 +52,7 @@ func NewServer(cdpProxy *browser.CDPProxy, webhookManager webhook.Manager, event
 
 	browserBaseURL = strings.TrimSuffix(browserBaseURL, "/")
 
-	vncBaseURL := cfg.VNCURL
-	if !strings.HasPrefix(vncBaseURL, "http:") && !strings.HasPrefix(vncBaseURL, "https:") {
-		vncBaseURL = "http://" + vncBaseURL
-	}
-	vncBaseURL = strings.TrimSuffix(vncBaseURL, "/")
-
-	serverBaseURL := fmt.Sprintf("http://localhost:%s", port)
+	frontendBaseURL := strings.TrimSuffix(cfg.FrontendURL, "/")
 
 	server := &Server{
 		router:          router,
@@ -69,8 +60,7 @@ func NewServer(cdpProxy *browser.CDPProxy, webhookManager webhook.Manager, event
 		webhookManager:  webhookManager,
 		eventDispatcher: eventDispatcher,
 		browserBaseURL:  browserBaseURL,
-		vncBaseURL:      vncBaseURL,
-		serverBaseURL:   serverBaseURL,
+		frontendBaseURL: frontendBaseURL,
 		config:          cfg,
 		server: &http.Server{
 			Addr:    ":" + port,
@@ -85,7 +75,7 @@ func NewServer(cdpProxy *browser.CDPProxy, webhookManager webhook.Manager, event
 
 func (s *Server) Start() error {
 	log.Printf("Starting API server on %s", s.server.Addr)
-	log.Printf("Proxying browser at %s to %s", s.browserBaseURL, s.serverBaseURL)
+	log.Printf("Proxying browser at %s through frontend at %s", s.browserBaseURL, s.frontendBaseURL)
 	return s.server.ListenAndServe()
 }
 
@@ -114,10 +104,6 @@ func (s *Server) setupRoutes() {
 	webhookHandler.RegisterRoutes(api)
 
 	s.router.HandleFunc("/devtools/{path:.*}", browserHandler.HandleWebSocket)
-
-	// VNC proxy routes
-	s.router.PathPrefix("/vnc/").HandlerFunc(s.handleVNCProxy)
-	s.router.HandleFunc("/vnc", s.handleVNCProxy)
 
 	s.router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -181,8 +167,8 @@ func (s *Server) handleJSONVersion(w http.ResponseWriter, r *http.Request) {
 	if wsURL, ok := result["webSocketDebuggerUrl"].(string); ok {
 		parsedURL, err := url.Parse(wsURL)
 		if err == nil {
-			serverURL, _ := url.Parse(s.serverBaseURL)
-			newWsURL := "ws://" + serverURL.Host + parsedURL.Path
+			frontendURL, _ := url.Parse(s.frontendBaseURL)
+			newWsURL := "ws://" + frontendURL.Host + parsedURL.Path
 			result["webSocketDebuggerUrl"] = newWsURL
 		}
 	}
@@ -257,18 +243,18 @@ func (s *Server) handleJSONList(w http.ResponseWriter, r *http.Request) {
 		if wsURL, ok := targets[i]["webSocketDebuggerUrl"].(string); ok {
 			parsedURL, err := url.Parse(wsURL)
 			if err == nil {
-				serverURL, _ := url.Parse(s.serverBaseURL)
-				newWsURL := "ws://" + serverURL.Host + parsedURL.Path
+				frontendURL, _ := url.Parse(s.frontendBaseURL)
+				newWsURL := "ws://" + frontendURL.Host + parsedURL.Path
 				targets[i]["webSocketDebuggerUrl"] = newWsURL
 			}
 		}
 
-		if frontendURL, ok := targets[i]["devtoolsFrontendUrl"].(string); ok {
+		if devtoolsURL, ok := targets[i]["devtoolsFrontendUrl"].(string); ok {
 			parsedURL, err := url.Parse(s.browserBaseURL)
 			if err == nil {
-				serverURL, _ := url.Parse(s.serverBaseURL)
-				frontendURL = strings.Replace(frontendURL, parsedURL.Host, serverURL.Host, -1)
-				targets[i]["devtoolsFrontendUrl"] = frontendURL
+				frontendURL, _ := url.Parse(s.frontendBaseURL)
+				devtoolsURL = strings.Replace(devtoolsURL, parsedURL.Host, frontendURL.Host, -1)
+				targets[i]["devtoolsFrontendUrl"] = devtoolsURL
 			}
 		}
 	}
@@ -516,9 +502,9 @@ func (s *Server) rewriteWebSocketURLs(data map[string]interface{}) {
 		if strVal, ok := data[key].(string); ok {
 			parsedBrowserURL, err := url.Parse(s.browserBaseURL)
 			if err == nil {
-				parsedServerURL, _ := url.Parse(s.serverBaseURL)
+				parsedFrontendURL, _ := url.Parse(s.frontendBaseURL)
 
-				newVal := strings.Replace(strVal, parsedBrowserURL.Host, parsedServerURL.Host, -1)
+				newVal := strings.Replace(strVal, parsedBrowserURL.Host, parsedFrontendURL.Host, -1)
 
 				if key == "webSocketDebuggerUrl" {
 					if strings.HasPrefix(newVal, "http:") {

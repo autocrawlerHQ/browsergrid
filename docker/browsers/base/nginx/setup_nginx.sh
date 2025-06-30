@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-# Create a properly configured nginx configuration with the correct port
-sed "s/61000/${REMOTE_DEBUGGING_PORT}/g" /etc/nginx/conf.d/default.conf > /tmp/nginx.conf
-mv /tmp/nginx.conf /etc/nginx/conf.d/default.conf
+# Test nginx configuration
+nginx -t
 
-echo "Nginx configured with remote debugging port: ${REMOTE_DEBUGGING_PORT}" 
+# Nginx configuration is now static and properly configured
+echo "Nginx configured to proxy to browsermux on port 8080" 
