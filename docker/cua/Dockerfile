@@ -13,7 +13,6 @@ RUN npm run build
 
 ENV NODE_ENV=production
 ENV PORT=3000
-ENV BROWSERMUX_URL=http://browsermux:8080
 
 EXPOSE 3000
 

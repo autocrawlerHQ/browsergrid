@@ -69,8 +69,16 @@ func (r *Reconciler) reconcile(ctx context.Context) error {
 	}
 
 	if r.cleanupEnabled {
+		if err := r.cleanupOrphanedSessions(ctx); err != nil {
+			log.Printf("Error cleaning up orphaned sessions: %v", err)
+		}
+
 		if err := r.cleanupExpiredSessions(ctx); err != nil {
 			log.Printf("Error cleaning up expired sessions: %v", err)
+		}
+
+		if err := r.cleanupStaleWorkers(ctx); err != nil {
+			log.Printf("Error cleaning up stale workers: %v", err)
 		}
 	}
 
@@ -226,6 +234,91 @@ func (r *Reconciler) cleanupExpiredSessions(ctx context.Context) error {
 
 	if result.RowsAffected > 0 {
 		log.Printf("Cleaned up %d old terminated sessions", result.RowsAffected)
+	}
+
+	return nil
+}
+
+// cleanupOrphanedSessions finds sessions that are still in non-terminal states
+// but whose worker is missing or has not sent a heartbeat within workerTTL.
+// These sessions are marked as crashed to prevent them from lingering forever.
+func (r *Reconciler) cleanupOrphanedSessions(ctx context.Context) error {
+	cutoff := time.Now().Add(-r.workerTTL)
+
+	// Sessions in these states should have an active worker
+	liveStates := []sessions.SessionStatus{
+		sessions.StatusStarting,
+		sessions.StatusRunning,
+		sessions.StatusIdle,
+	}
+
+	// Find sessions whose worker is missing or has stale heartbeat
+	result := r.db.WithContext(ctx).
+		Exec(`
+			UPDATE sessions 
+			SET status = ?, updated_at = ? 
+			WHERE status IN (?) 
+			AND (
+				worker_id IS NULL 
+				OR worker_id NOT IN (
+					SELECT id FROM workers WHERE last_beat > ?
+				)
+			)
+		`, sessions.StatusCrashed, time.Now(), liveStates, cutoff)
+
+	if result.Error != nil {
+		return result.Error
+	}
+
+	orphanedCount := result.RowsAffected
+
+	// Also cleanup sessions that have been stuck in "Starting" state for too long
+	// This handles cases where a worker claimed a session but crashed before updating it
+	startingTimeout := 10 * time.Minute // Allow 10 minutes for a session to start
+	startingCutoff := time.Now().Add(-startingTimeout)
+
+	result = r.db.WithContext(ctx).
+		Model(&sessions.Session{}).
+		Where("status = ? AND updated_at < ?", sessions.StatusStarting, startingCutoff).
+		Updates(map[string]interface{}{
+			"status":     sessions.StatusCrashed,
+			"updated_at": time.Now(),
+		})
+
+	if result.Error != nil {
+		return result.Error
+	}
+
+	stuckStartingCount := result.RowsAffected
+	totalCleaned := orphanedCount + stuckStartingCount
+
+	if totalCleaned > 0 {
+		log.Printf("Marked %d orphaned sessions as crashed (%d worker missing/stale, %d stuck starting)",
+			totalCleaned, orphanedCount, stuckStartingCount)
+	}
+
+	return nil
+}
+
+// cleanupStaleWorkers removes workers that haven't sent a heartbeat within the TTL
+// This prevents the workers table from growing indefinitely and removes zombie workers
+func (r *Reconciler) cleanupStaleWorkers(ctx context.Context) error {
+	// Use a longer TTL for cleanup than for considering workers online
+	// This gives workers time to recover from temporary network issues
+	cleanupTTL := r.workerTTL * 3 // 3x the normal TTL (15 minutes by default)
+	cutoff := time.Now().Add(-cleanupTTL)
+
+	result := r.db.WithContext(ctx).
+		Where("last_beat < ?", cutoff).
+		Delete(&workpool.Worker{})
+
+	if result.Error != nil {
+		return result.Error
+	}
+
+	if result.RowsAffected > 0 {
+		log.Printf("Cleaned up %d stale workers (last_beat < %v)",
+			result.RowsAffected, cutoff.Format(time.RFC3339))
 	}
 
 	return nil

@@ -165,8 +165,8 @@ func (s *Server) handleJSONVersion(w http.ResponseWriter, r *http.Request) {
 	if wsURL, ok := result["webSocketDebuggerUrl"].(string); ok {
 		parsedURL, err := url.Parse(wsURL)
 		if err == nil {
-			frontendURL, _ := url.Parse(s.frontendBaseURL)
-			newWsURL := "ws://" + frontendURL.Host + parsedURL.Path
+			requestHost := s.getRequestHost(r)
+			newWsURL := "ws://" + requestHost + parsedURL.Path
 			result["webSocketDebuggerUrl"] = newWsURL
 		}
 	}
@@ -237,24 +237,9 @@ func (s *Server) handleJSONList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	requestHost := s.getRequestHost(r)
 	for i := range targets {
-		if wsURL, ok := targets[i]["webSocketDebuggerUrl"].(string); ok {
-			parsedURL, err := url.Parse(wsURL)
-			if err == nil {
-				frontendURL, _ := url.Parse(s.frontendBaseURL)
-				newWsURL := "ws://" + frontendURL.Host + parsedURL.Path
-				targets[i]["webSocketDebuggerUrl"] = newWsURL
-			}
-		}
-
-		if devtoolsURL, ok := targets[i]["devtoolsFrontendUrl"].(string); ok {
-			parsedURL, err := url.Parse(s.browserBaseURL)
-			if err == nil {
-				frontendURL, _ := url.Parse(s.frontendBaseURL)
-				devtoolsURL = strings.Replace(devtoolsURL, parsedURL.Host, frontendURL.Host, -1)
-				targets[i]["devtoolsFrontendUrl"] = devtoolsURL
-			}
-		}
+		s.rewriteWebSocketURLsWithHost(targets[i], requestHost)
 	}
 
 	for key, values := range resp.Header {
@@ -304,7 +289,7 @@ func (s *Server) handleJSONNew(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	s.proxyJSONResponse(w, resp)
+	s.proxyJSONResponse(w, r, resp)
 }
 
 func (s *Server) handleJSONActivate(w http.ResponseWriter, r *http.Request) {
@@ -430,7 +415,7 @@ func (s *Server) handleJSONProtocol(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, resp.Body)
 }
 
-func (s *Server) proxyJSONResponse(w http.ResponseWriter, resp *http.Response) {
+func (s *Server) proxyJSONResponse(w http.ResponseWriter, r *http.Request, resp *http.Response) {
 	if resp.StatusCode != http.StatusOK {
 		for key, values := range resp.Header {
 			for _, value := range values {
@@ -462,8 +447,9 @@ func (s *Server) proxyJSONResponse(w http.ResponseWriter, resp *http.Response) {
 			return
 		}
 
+		requestHost := s.getRequestHost(r)
 		for i := range resultArray {
-			s.rewriteWebSocketURLs(resultArray[i])
+			s.rewriteWebSocketURLsWithHost(resultArray[i], requestHost)
 		}
 
 		for key, values := range resp.Header {
@@ -479,7 +465,8 @@ func (s *Server) proxyJSONResponse(w http.ResponseWriter, resp *http.Response) {
 		return
 	}
 
-	s.rewriteWebSocketURLs(result)
+	requestHost := s.getRequestHost(r)
+	s.rewriteWebSocketURLsWithHost(result, requestHost)
 
 	for key, values := range resp.Header {
 		if key != "Content-Length" {
@@ -493,16 +480,28 @@ func (s *Server) proxyJSONResponse(w http.ResponseWriter, resp *http.Response) {
 	json.NewEncoder(w).Encode(result)
 }
 
-func (s *Server) rewriteWebSocketURLs(data map[string]interface{}) {
+func (s *Server) getRequestHost(r *http.Request) string {
+	host := r.Host
+	if host == "" {
+		host = r.Header.Get("Host")
+	}
+	if host == "" {
+		// Fallback to the configured frontend URL host
+		if parsedURL, err := url.Parse(s.frontendBaseURL); err == nil {
+			host = parsedURL.Host
+		}
+	}
+	return host
+}
+
+func (s *Server) rewriteWebSocketURLsWithHost(data map[string]interface{}, requestHost string) {
 	wsKeys := []string{"webSocketDebuggerUrl", "devtoolsFrontendUrl"}
 
 	for _, key := range wsKeys {
 		if strVal, ok := data[key].(string); ok {
 			parsedBrowserURL, err := url.Parse(s.browserBaseURL)
 			if err == nil {
-				parsedFrontendURL, _ := url.Parse(s.frontendBaseURL)
-
-				newVal := strings.Replace(strVal, parsedBrowserURL.Host, parsedFrontendURL.Host, -1)
+				newVal := strings.Replace(strVal, parsedBrowserURL.Host, requestHost, -1)
 
 				if key == "webSocketDebuggerUrl" {
 					if strings.HasPrefix(newVal, "http:") {

@@ -13,6 +13,11 @@ type Store struct{ db *gorm.DB }
 
 func NewStore(db *gorm.DB) *Store { return &Store{db: db} }
 
+// GetDB returns the underlying database connection for advanced operations
+func (s *Store) GetDB() *gorm.DB {
+	return s.db
+}
+
 func (s *Store) CreateSession(ctx context.Context, sess *Session) error {
 	if sess.ID == uuid.Nil {
 		sess.ID = uuid.New()
@@ -307,4 +312,22 @@ func (s *Store) AutoMigrate() error {
 		&SessionMetrics{},
 		&Pool{},
 	)
+}
+
+// MarkWorkerSessionsFailed marks all non-terminal sessions assigned to a worker as failed
+// This is used during worker shutdown to prevent orphaned sessions
+func (s *Store) MarkWorkerSessionsFailed(ctx context.Context, workerID uuid.UUID) (int64, error) {
+	result := s.db.WithContext(ctx).
+		Model(&Session{}).
+		Where("worker_id = ? AND status IN (?)", workerID, []SessionStatus{
+			StatusStarting,
+			StatusRunning,
+			StatusIdle,
+		}).
+		Updates(map[string]interface{}{
+			"status":     StatusFailed,
+			"updated_at": time.Now(),
+		})
+
+	return result.RowsAffected, result.Error
 }

@@ -55,7 +55,6 @@ services:
       - ../.env
     environment:
       - PORT=${CUA_PORT:-3000}
-      - BROWSERMUX_URL=http://browser:80
       - NODE_ENV=${NODE_ENV:-production}
     ports:
       - "${CUA_PORT:-3000}:3000"

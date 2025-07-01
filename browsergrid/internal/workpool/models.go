@@ -86,9 +86,9 @@ func (wp *WorkPool) SessionsToCreate(currentSessions, pendingSessions, available
 // @Description Worker instance that handles browser sessions
 type Worker struct {
 	ID       uuid.UUID    `json:"id" example:"550e8400-e29b-41d4-a716-446655440001"`
-	PoolID   uuid.UUID    `json:"pool_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	PoolID   uuid.UUID    `json:"pool_id" example:"550e8400-e29b-41d4-a716-446655440000" gorm:"uniqueIndex:idx_workers_pool_hostname"`
 	Name     string       `json:"name" example:"worker-chrome-001"`
-	Hostname string       `json:"hostname" example:"browsergrid-worker-1"`
+	Hostname string       `json:"hostname" example:"browsergrid-worker-1" gorm:"uniqueIndex:idx_workers_pool_hostname"`
 	Provider ProviderType `json:"provider" example:"docker"`
 
 	MaxSlots  int       `json:"max_slots" example:"1"`

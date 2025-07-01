@@ -89,9 +89,16 @@ func (s *Store) RegisterWorker(ctx context.Context, w *Worker) error {
 	w.LastBeat = now
 	w.StartedAt = now
 
+	// Use stable identity based on pool_id + hostname
+	// This prevents duplicate workers when the same physical worker restarts
 	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"last_beat", "active", "paused"}),
+		Columns: []clause.Column{
+			{Name: "pool_id"},
+			{Name: "hostname"},
+		},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"id", "name", "provider", "max_slots", "active", "last_beat", "started_at", "paused",
+		}),
 	}).Create(w).Error
 }
 
