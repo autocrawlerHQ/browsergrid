@@ -59,17 +59,13 @@ func (wp *WorkPool) CanAcceptMore(currentSessions int) bool {
 	return !wp.Paused && currentSessions < wp.MaxConcurrency
 }
 
-func (wp *WorkPool) SessionsToCreate(currentSessions, pendingSessions, availableWorkerSlots int) int {
+func (wp *WorkPool) SessionsToCreate(currentSessions, pendingSessions int) int {
 	if !wp.NeedsScaling(currentSessions, pendingSessions) {
 		return 0
 	}
 
 	totalSessions := currentSessions + pendingSessions
 	needed := wp.MinSize - totalSessions
-
-	if needed > availableWorkerSlots {
-		needed = availableWorkerSlots
-	}
 
 	if currentSessions+pendingSessions+needed > wp.MaxConcurrency {
 		needed = wp.MaxConcurrency - currentSessions - pendingSessions
@@ -82,68 +78,12 @@ func (wp *WorkPool) SessionsToCreate(currentSessions, pendingSessions, available
 	return needed
 }
 
-// Worker represents a browser worker instance
-// @Description Worker instance that handles browser sessions
-type Worker struct {
-	ID       uuid.UUID    `json:"id" example:"550e8400-e29b-41d4-a716-446655440001"`
-	PoolID   uuid.UUID    `json:"pool_id" example:"550e8400-e29b-41d4-a716-446655440000" gorm:"uniqueIndex:idx_workers_pool_hostname"`
-	Name     string       `json:"name" example:"worker-chrome-001"`
-	Hostname string       `json:"hostname" example:"browsergrid-worker-1" gorm:"uniqueIndex:idx_workers_pool_hostname"`
-	Provider ProviderType `json:"provider" example:"docker"`
-
-	MaxSlots  int       `json:"max_slots" example:"1"`
-	Active    int       `json:"active" example:"0"`
-	LastBeat  time.Time `json:"last_beat" example:"2023-01-01T00:00:00Z"`
-	StartedAt time.Time `json:"started_at" example:"2023-01-01T00:00:00Z"`
-	Paused    bool      `json:"paused" example:"false"`
-
-	Pool WorkPool `json:"-" gorm:"foreignKey:PoolID;constraint:OnDelete:CASCADE"`
-} //@name Worker
-
-func (Worker) TableName() string {
-	return "workers"
-}
-
-func (w *Worker) IsOnline(ttl time.Duration) bool {
-	return time.Since(w.LastBeat) <= ttl
-}
-
-func (w *Worker) HasCapacity() bool {
-	return !w.Paused && w.Active < w.MaxSlots
-}
-
-func (w *Worker) AvailableSlots() int {
-	if w.Paused {
-		return 0
-	}
-	return w.MaxSlots - w.Active
-}
-
 // WorkPoolListResponse represents a response containing a list of work pools
 // @Description Response containing a list of work pools
 type WorkPoolListResponse struct {
 	Pools []WorkPool `json:"pools"`
 	Total int        `json:"total" example:"5"`
 } //@name WorkPoolListResponse
-
-// WorkerListResponse represents a response containing a list of workers
-// @Description Response containing a list of workers
-type WorkerListResponse struct {
-	Workers []Worker `json:"workers"`
-	Total   int      `json:"total" example:"10"`
-} //@name WorkerListResponse
-
-// WorkerHeartbeatRequest represents a heartbeat request from a worker
-// @Description Heartbeat data with active session count
-type WorkerHeartbeatRequest struct {
-	Active int `json:"active" example:"2" validate:"min=0"`
-} //@name WorkerHeartbeatRequest
-
-// WorkerPauseRequest represents a request to pause or resume a worker
-// @Description Pause configuration for a worker
-type WorkerPauseRequest struct {
-	Paused bool `json:"paused" example:"true"`
-} //@name WorkerPauseRequest
 
 // ScalingRequest represents scaling parameters for a work pool
 // @Description Scaling parameters for updating work pool configuration

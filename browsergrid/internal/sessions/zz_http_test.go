@@ -45,7 +45,11 @@ func setupHTTPTestDB(t *testing.T) (*gorm.DB, *gin.Engine) {
 
 	v1 := router.Group("/api/v1")
 	mockPool := &mockPoolService{}
-	RegisterRoutes(v1, db, mockPool)
+	RegisterRoutes(v1, Dependencies{
+		DB:         db,
+		PoolSvc:    mockPool,
+		TaskClient: nil,
+	})
 
 	return db, router
 }

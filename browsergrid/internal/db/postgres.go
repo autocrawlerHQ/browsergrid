@@ -56,7 +56,6 @@ func (db *DB) AutoMigrate() error {
 
 	if err := db.DB.AutoMigrate(
 		&workpool.WorkPool{},
-		&workpool.Worker{},
 	); err != nil {
 		return fmt.Errorf("migrate workpool tables: %w", err)
 	}

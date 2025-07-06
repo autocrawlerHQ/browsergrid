@@ -2,42 +2,47 @@ package poolmgr
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"time"
 
 	"github.com/google/uuid"
-	"gorm.io/datatypes"
+	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 
 	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
+	"github.com/autocrawlerHQ/browsergrid/internal/tasks"
 	"github.com/autocrawlerHQ/browsergrid/internal/workpool"
 )
 
+// Reconciler monitors work pools and enqueues scaling tasks as needed
 type Reconciler struct {
-	db        *gorm.DB
-	wpStore   *workpool.Store
-	sessStore *sessions.Store
+	db         *gorm.DB
+	wpStore    *workpool.Store
+	sessStore  *sessions.Store
+	taskClient *asynq.Client
+	redisOpt   asynq.RedisClientOpt
 
-	tickInterval   time.Duration
-	workerTTL      time.Duration
-	cleanupEnabled bool
+	tickInterval time.Duration
 }
 
-func NewReconciler(db *gorm.DB) *Reconciler {
+func NewReconciler(db *gorm.DB, taskClient *asynq.Client) *Reconciler {
 	return &Reconciler{
-		db:        db,
-		wpStore:   workpool.NewStore(db),
-		sessStore: sessions.NewStore(db),
+		db:         db,
+		wpStore:    workpool.NewStore(db),
+		sessStore:  sessions.NewStore(db),
+		taskClient: taskClient,
 
-		tickInterval:   1 * time.Minute,
-		workerTTL:      5 * time.Minute,
-		cleanupEnabled: true,
+		tickInterval: 30 * time.Second, // Check every 30 seconds
 	}
 }
 
 func (r *Reconciler) Start(ctx context.Context) error {
-	log.Println("Starting pool reconciler...")
+	log.Println("[RECONCILER] Starting pool reconciler...")
+
+	// Schedule periodic cleanup tasks
+	if err := r.scheduleCleanupTasks(); err != nil {
+		log.Printf("[RECONCILER] Failed to schedule cleanup tasks: %v", err)
+	}
 
 	ticker := time.NewTicker(r.tickInterval)
 	defer ticker.Stop()
@@ -45,12 +50,12 @@ func (r *Reconciler) Start(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("Pool reconciler stopping...")
+			log.Println("[RECONCILER] Pool reconciler stopping...")
 			return ctx.Err()
 
 		case <-ticker.C:
 			if err := r.reconcile(ctx); err != nil {
-				log.Printf("Reconciliation error: %v", err)
+				log.Printf("[RECONCILER] Reconciliation error: %v", err)
 			}
 		}
 	}
@@ -63,22 +68,12 @@ func (r *Reconciler) reconcile(ctx context.Context) error {
 	}
 
 	for _, pool := range pools {
+		if pool.Paused || !pool.AutoScale {
+			continue
+		}
+
 		if err := r.reconcilePool(ctx, &pool); err != nil {
-			log.Printf("Error reconciling pool %s: %v", pool.Name, err)
-		}
-	}
-
-	if r.cleanupEnabled {
-		if err := r.cleanupOrphanedSessions(ctx); err != nil {
-			log.Printf("Error cleaning up orphaned sessions: %v", err)
-		}
-
-		if err := r.cleanupExpiredSessions(ctx); err != nil {
-			log.Printf("Error cleaning up expired sessions: %v", err)
-		}
-
-		if err := r.cleanupStaleWorkers(ctx); err != nil {
-			log.Printf("Error cleaning up stale workers: %v", err)
+			log.Printf("[RECONCILER] Error reconciling pool %s: %v", pool.Name, err)
 		}
 	}
 
@@ -86,6 +81,7 @@ func (r *Reconciler) reconcile(ctx context.Context) error {
 }
 
 func (r *Reconciler) reconcilePool(ctx context.Context, pool *workpool.WorkPool) error {
+	// Count sessions by status
 	activeCount, err := r.countSessionsByStatus(ctx, pool.ID, []sessions.SessionStatus{
 		sessions.StatusStarting, sessions.StatusRunning, sessions.StatusIdle,
 	})
@@ -100,80 +96,107 @@ func (r *Reconciler) reconcilePool(ctx context.Context, pool *workpool.WorkPool)
 		return err
 	}
 
-	_, workerActive, err := r.wpStore.GetWorkerCapacity(ctx, pool.ID)
-	if err != nil {
-		return err
+	totalSessions := activeCount + pendingCount
+
+	log.Printf("[RECONCILER] Pool %s: active=%d, pending=%d, min_size=%d, max=%d",
+		pool.Name, activeCount, pendingCount, pool.MinSize, pool.MaxConcurrency)
+
+	// Calculate how many sessions we need to create
+	var sessionsToCreate int
+	if totalSessions < pool.MinSize {
+		sessionsToCreate = pool.MinSize - totalSessions
 	}
 
-	workerSlots, _, err := r.wpStore.GetWorkerCapacity(ctx, pool.ID)
-	if err != nil {
-		return err
+	// Don't exceed max concurrency
+	if totalSessions+sessionsToCreate > pool.MaxConcurrency {
+		sessionsToCreate = pool.MaxConcurrency - totalSessions
 	}
-
-	availableWorkerSlots := workerSlots - workerActive
-
-	log.Printf("Pool %s: active=%d, pending=%d, worker_slots=%d, worker_active=%d, min_size=%d",
-		pool.Name, activeCount, pendingCount, workerSlots, workerActive, pool.MinSize)
-
-	sessionsToCreate := pool.SessionsToCreate(activeCount, pendingCount, availableWorkerSlots)
 
 	if sessionsToCreate > 0 {
-		log.Printf("Scaling up pool %s by %d sessions (policy-driven)", pool.Name, sessionsToCreate)
+		log.Printf("[RECONCILER] Pool %s needs %d more sessions", pool.Name, sessionsToCreate)
 
-		for i := 0; i < sessionsToCreate; i++ {
-			sess := r.createSessionFromPool(pool)
-			if err := r.sessStore.CreateSession(ctx, sess); err != nil {
-				log.Printf("Error creating session for pool %s: %v", pool.Name, err)
-				break
-			}
+		// Enqueue a scaling task
+		payload := tasks.PoolScalePayload{
+			WorkPoolID:      pool.ID,
+			DesiredSessions: sessionsToCreate,
 		}
+
+		task, err := tasks.NewPoolScaleTask(payload)
+		if err != nil {
+			return err
+		}
+
+		info, err := r.taskClient.Enqueue(task,
+			asynq.Queue("low"),
+			asynq.MaxRetry(3),
+			asynq.Timeout(5*time.Minute),
+		)
+		if err != nil {
+			return err
+		}
+
+		log.Printf("[RECONCILER] Enqueued scaling task %s for pool %s", info.ID, pool.Name)
 	}
 
-	if err := r.cleanupIdleSessionsForPool(ctx, pool); err != nil {
-		log.Printf("Error cleaning up idle sessions for pool %s: %v", pool.Name, err)
+	// Check for idle sessions that should be terminated
+	if pool.MaxIdleTime > 0 {
+		idleTimeout := time.Duration(pool.MaxIdleTime) * time.Second
+		cutoff := time.Now().Add(-idleTimeout)
+
+		status := sessions.StatusIdle
+		sessionsList, err := r.sessStore.ListSessions(ctx, &status, nil, &cutoff, 0, 1000) // adjust limit as needed
+		if err != nil {
+			return err
+		}
+		// Filter by WorkPoolID in Go, since ListSessions does not support WorkPoolID directly
+		var idleSessions []sessions.Session
+		for _, sess := range sessionsList {
+			if sess.WorkPoolID != nil && *sess.WorkPoolID == pool.ID {
+				idleSessions = append(idleSessions, sess)
+			}
+		}
+
+		for _, sess := range idleSessions {
+			log.Printf("[RECONCILER] Session %s has been idle for too long, terminating", sess.ID)
+
+			// Enqueue stop task
+			stopPayload := tasks.SessionStopPayload{
+				SessionID: sess.ID,
+				Reason:    "idle_timeout",
+			}
+
+			stopTask, _ := tasks.NewSessionStopTask(stopPayload)
+			r.taskClient.Enqueue(stopTask, asynq.Queue("default"))
+		}
 	}
 
 	return nil
 }
 
-func (r *Reconciler) createSessionFromPool(pool *workpool.WorkPool) *sessions.Session {
-	env := pool.DefaultEnv
-	if env == nil {
-		envData, _ := json.Marshal(map[string]string{})
-		env = datatypes.JSON(envData)
+func (r *Reconciler) scheduleCleanupTasks() error {
+	// Schedule hourly cleanup of expired sessions
+	scheduler := asynq.NewScheduler(
+		asynq.RedisClientOpt{Addr: r.redisOpt.Addr},
+		nil,
+	)
+
+	// Cleanup expired sessions every hour
+	cleanupPayload := tasks.CleanupExpiredPayload{
+		MaxAge: 24, // Remove sessions older than 24 hours
+	}
+	cleanupTask, _ := tasks.NewCleanupExpiredTask(cleanupPayload)
+
+	_, err := scheduler.Register("0 * * * *", cleanupTask, asynq.Queue("low"))
+	if err != nil {
+		return err
 	}
 
-	sess := &sessions.Session{
-		ID:              uuid.New(),
-		Browser:         sessions.BrowserChrome,
-		Version:         sessions.VerLatest,
-		Headless:        true,
-		OperatingSystem: sessions.OSLinux,
-		Screen: sessions.ScreenConfig{
-			Width:  1920,
-			Height: 1080,
-			DPI:    96,
-			Scale:  1.0,
-		},
-		Environment: env,
-		Status:      sessions.StatusPending,
-		Provider:    string(pool.Provider),
-		WorkPoolID:  &pool.ID,
-		IsPooled:    false,
+	if err := scheduler.Start(); err != nil {
+		return err
 	}
 
-	if pool.DefaultImage != nil {
-		var envMap map[string]string
-		if err := json.Unmarshal(sess.Environment, &envMap); err != nil {
-			envMap = make(map[string]string)
-		}
-		envMap["BROWSER_IMAGE"] = *pool.DefaultImage
-
-		envData, _ := json.Marshal(envMap)
-		sess.Environment = datatypes.JSON(envData)
-	}
-
-	return sess
+	log.Println("[RECONCILER] Scheduled periodic cleanup tasks")
+	return nil
 }
 
 func (r *Reconciler) countSessionsByStatus(ctx context.Context, poolID uuid.UUID, statuses []sessions.SessionStatus) (int, error) {
@@ -185,157 +208,29 @@ func (r *Reconciler) countSessionsByStatus(ctx context.Context, poolID uuid.UUID
 	return int(count), err
 }
 
-func (r *Reconciler) cleanupIdleSessionsForPool(ctx context.Context, pool *workpool.WorkPool) error {
-	if pool.MaxIdleTime <= 0 {
-		return nil
-	}
-
-	idleTimeout := time.Duration(pool.MaxIdleTime) * time.Second
-	cutoff := time.Now().Add(-idleTimeout)
-
-	result := r.db.WithContext(ctx).
-		Model(&sessions.Session{}).
-		Where("work_pool_id = ? AND status = ? AND updated_at < ?",
-			pool.ID, sessions.StatusIdle, cutoff).
-		Update("status", sessions.StatusExpired)
-
-	if result.Error != nil {
-		return result.Error
-	}
-
-	if result.RowsAffected > 0 {
-		log.Printf("Pool %s: marked %d idle sessions as expired (idle_timeout=%ds)",
-			pool.Name, result.RowsAffected, pool.MaxIdleTime)
-	}
-
-	return nil
-}
-
-func (r *Reconciler) cleanupExpiredSessions(ctx context.Context) error {
-	cleanupAge := 24 * time.Hour
-	cleanupCutoff := time.Now().Add(-cleanupAge)
-
-	terminalStatuses := []sessions.SessionStatus{
-		sessions.StatusCompleted,
-		sessions.StatusFailed,
-		sessions.StatusExpired,
-		sessions.StatusCrashed,
-		sessions.StatusTimedOut,
-		sessions.StatusTerminated,
-	}
-
-	result := r.db.WithContext(ctx).
-		Where("status IN ? AND updated_at < ?", terminalStatuses, cleanupCutoff).
-		Delete(&sessions.Session{})
-
-	if result.Error != nil {
-		return result.Error
-	}
-
-	if result.RowsAffected > 0 {
-		log.Printf("Cleaned up %d old terminated sessions", result.RowsAffected)
-	}
-
-	return nil
-}
-
-// cleanupOrphanedSessions finds sessions that are still in non-terminal states
-// but whose worker is missing or has not sent a heartbeat within workerTTL.
-// These sessions are marked as crashed to prevent them from lingering forever.
-func (r *Reconciler) cleanupOrphanedSessions(ctx context.Context) error {
-	cutoff := time.Now().Add(-r.workerTTL)
-
-	// Sessions in these states should have an active worker
-	liveStates := []sessions.SessionStatus{
-		sessions.StatusStarting,
-		sessions.StatusRunning,
-		sessions.StatusIdle,
-	}
-
-	// Find sessions whose worker is missing or has stale heartbeat
-	result := r.db.WithContext(ctx).
-		Exec(`
-			UPDATE sessions 
-			SET status = ?, updated_at = ? 
-			WHERE status IN (?) 
-			AND (
-				worker_id IS NULL 
-				OR worker_id NOT IN (
-					SELECT id FROM workers WHERE last_beat > ?
-				)
-			)
-		`, sessions.StatusCrashed, time.Now(), liveStates, cutoff)
-
-	if result.Error != nil {
-		return result.Error
-	}
-
-	orphanedCount := result.RowsAffected
-
-	// Also cleanup sessions that have been stuck in "Starting" state for too long
-	// This handles cases where a worker claimed a session but crashed before updating it
-	startingTimeout := 10 * time.Minute // Allow 10 minutes for a session to start
-	startingCutoff := time.Now().Add(-startingTimeout)
-
-	result = r.db.WithContext(ctx).
-		Model(&sessions.Session{}).
-		Where("status = ? AND updated_at < ?", sessions.StatusStarting, startingCutoff).
-		Updates(map[string]interface{}{
-			"status":     sessions.StatusCrashed,
-			"updated_at": time.Now(),
-		})
-
-	if result.Error != nil {
-		return result.Error
-	}
-
-	stuckStartingCount := result.RowsAffected
-	totalCleaned := orphanedCount + stuckStartingCount
-
-	if totalCleaned > 0 {
-		log.Printf("Marked %d orphaned sessions as crashed (%d worker missing/stale, %d stuck starting)",
-			totalCleaned, orphanedCount, stuckStartingCount)
-	}
-
-	return nil
-}
-
-// cleanupStaleWorkers removes workers that haven't sent a heartbeat within the TTL
-// This prevents the workers table from growing indefinitely and removes zombie workers
-func (r *Reconciler) cleanupStaleWorkers(ctx context.Context) error {
-	// Use a longer TTL for cleanup than for considering workers online
-	// This gives workers time to recover from temporary network issues
-	cleanupTTL := r.workerTTL * 3 // 3x the normal TTL (15 minutes by default)
-	cutoff := time.Now().Add(-cleanupTTL)
-
-	result := r.db.WithContext(ctx).
-		Where("last_beat < ?", cutoff).
-		Delete(&workpool.Worker{})
-
-	if result.Error != nil {
-		return result.Error
-	}
-
-	if result.RowsAffected > 0 {
-		log.Printf("Cleaned up %d stale workers (last_beat < %v)",
-			result.RowsAffected, cutoff.Format(time.RFC3339))
-	}
-
-	return nil
-}
-
+// GetPoolStats returns statistics for monitoring
 func (r *Reconciler) GetPoolStats(ctx context.Context, poolID uuid.UUID) (*PoolStats, error) {
 	pool, err := r.wpStore.GetWorkPool(ctx, poolID)
 	if err != nil {
 		return nil, err
 	}
 
+	// Get queue stats from Redis
+	inspector := asynq.NewInspector(r.redisOpt)
+
+	queueName := getQueueNameForProvider(pool.Provider)
+	queueInfo, err := inspector.GetQueueInfo(queueName)
+	if err != nil {
+		log.Printf("[RECONCILER] Failed to get queue info: %v", err)
+	}
+
+	// Count sessions by status
 	statusCounts := make(map[sessions.SessionStatus]int)
 	statuses := []sessions.SessionStatus{
-		sessions.StatusPending, sessions.StatusStarting, sessions.StatusAvailable,
-		sessions.StatusClaimed, sessions.StatusRunning, sessions.StatusIdle,
-		sessions.StatusCompleted, sessions.StatusFailed, sessions.StatusExpired,
-		sessions.StatusCrashed, sessions.StatusTimedOut, sessions.StatusTerminated,
+		sessions.StatusPending, sessions.StatusStarting, sessions.StatusRunning,
+		sessions.StatusIdle, sessions.StatusCompleted, sessions.StatusFailed,
+		sessions.StatusExpired, sessions.StatusCrashed, sessions.StatusTimedOut,
+		sessions.StatusTerminated,
 	}
 
 	for _, status := range statuses {
@@ -349,39 +244,27 @@ func (r *Reconciler) GetPoolStats(ctx context.Context, poolID uuid.UUID) (*PoolS
 		statusCounts[status] = int(count)
 	}
 
-	workers, err := r.wpStore.ListWorkers(ctx, &poolID, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	onlineWorkers := 0
-	totalWorkerSlots := 0
-	activeWorkerSlots := 0
-
-	for _, worker := range workers {
-		if worker.IsOnline(r.workerTTL) {
-			onlineWorkers++
-			totalWorkerSlots += worker.MaxSlots
-			activeWorkerSlots += worker.Active
-		}
-	}
+	activeSessions := statusCounts[sessions.StatusStarting] +
+		statusCounts[sessions.StatusRunning] +
+		statusCounts[sessions.StatusIdle]
 
 	utilizationPercent := 0.0
 	if pool.MaxConcurrency > 0 {
-		activeSessions := statusCounts[sessions.StatusStarting] +
-			statusCounts[sessions.StatusRunning] +
-			statusCounts[sessions.StatusIdle]
 		utilizationPercent = float64(activeSessions) / float64(pool.MaxConcurrency) * 100
 	}
 
-	return &PoolStats{
+	stats := &PoolStats{
 		Pool:               *pool,
 		SessionsByStatus:   statusCounts,
-		TotalWorkers:       len(workers),
-		OnlineWorkers:      onlineWorkers,
-		TotalWorkerSlots:   totalWorkerSlots,
-		ActiveWorkerSlots:  activeWorkerSlots,
 		UtilizationPercent: utilizationPercent,
+		QueueStats: QueueStats{
+			Pending:   queueInfo.Pending,
+			Active:    queueInfo.Active,
+			Scheduled: queueInfo.Scheduled,
+			Retry:     queueInfo.Retry,
+			Archived:  queueInfo.Archived,
+			Completed: queueInfo.Completed,
+		},
 		ScalingInfo: ScalingInfo{
 			MinSize:            pool.MinSize,
 			MaxConcurrency:     pool.MaxConcurrency,
@@ -389,18 +272,28 @@ func (r *Reconciler) GetPoolStats(ctx context.Context, poolID uuid.UUID) (*PoolS
 			MaxIdleTime:        pool.MaxIdleTime,
 			MaxSessionDuration: pool.MaxSessionDuration,
 		},
-	}, nil
+	}
+
+	return stats, nil
 }
+
+// Types
 
 type PoolStats struct {
 	Pool               workpool.WorkPool              `json:"pool"`
 	SessionsByStatus   map[sessions.SessionStatus]int `json:"sessions_by_status"`
-	TotalWorkers       int                            `json:"total_workers"`
-	OnlineWorkers      int                            `json:"online_workers"`
-	TotalWorkerSlots   int                            `json:"total_worker_slots"`
-	ActiveWorkerSlots  int                            `json:"active_worker_slots"`
 	UtilizationPercent float64                        `json:"utilization_percent"`
+	QueueStats         QueueStats                     `json:"queue_stats"`
 	ScalingInfo        ScalingInfo                    `json:"scaling_info"`
+}
+
+type QueueStats struct {
+	Pending   int `json:"pending"`
+	Active    int `json:"active"`
+	Scheduled int `json:"scheduled"`
+	Retry     int `json:"retry"`
+	Archived  int `json:"archived"`
+	Completed int `json:"completed"`
 }
 
 type ScalingInfo struct {
@@ -411,9 +304,21 @@ type ScalingInfo struct {
 	MaxSessionDuration int  `json:"max_session_duration"`
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
+// Helper functions
+
+func getQueueNameForProvider(provider workpool.ProviderType) string {
+	switch provider {
+	case workpool.ProviderDocker:
+		return "default"
+	case workpool.ProviderACI:
+		return "azure"
+	case workpool.ProviderLocal:
+		return "local"
+	default:
+		return "default"
 	}
-	return b
+}
+
+func ptr[T any](v T) *T {
+	return &v
 }

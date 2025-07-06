@@ -38,7 +38,6 @@ ENV GID=1000
 
 ENV REMOTE_DEBUGGING_PORT=61000
 ENV SW_SERVER_PORT=8082
-ENV BROWSERMUX_PORT=8080
 
 # Install system packages
 RUN apt-get update && apt-get install -y --no-install-recommends \

@@ -131,7 +131,6 @@ type Session struct {
 	WSEndpoint *string `json:"ws_endpoint,omitempty" example:"ws://localhost:80/devtools/browser"`
 	LiveURL    *string `json:"live_url,omitempty" example:"http://localhost:80"`
 
-	WorkerID   *uuid.UUID `json:"worker_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440001"`
 	WorkPoolID *uuid.UUID `json:"work_pool_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440002"`
 
 	PoolID    *string    `json:"pool_id,omitempty" example:"chrome-pool"`
@@ -275,3 +274,15 @@ type SessionEventListResponse struct {
 	Offset int            `json:"offset" example:"0"`
 	Limit  int            `json:"limit" example:"100"`
 } //@name SessionEventListResponse
+
+// ErrorResponse represents an error response
+// @Description Standard error response format
+type ErrorResponse struct {
+	Error string `json:"error" example:"Invalid session ID"`
+} //@name ErrorResponse
+
+// MessageResponse represents a simple message response
+// @Description Standard message response format
+type MessageResponse struct {
+	Message string `json:"message" example:"Session termination initiated"`
+} //@name MessageResponse

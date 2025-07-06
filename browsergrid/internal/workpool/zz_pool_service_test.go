@@ -210,13 +210,13 @@ func setupPoolServiceTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 
 	// Clean up any existing tables
-	err = db.Migrator().DropTable(&WorkPool{}, &Worker{})
+	err = db.Migrator().DropTable(&WorkPool{})
 	if err != nil {
 		t.Logf("Warning: Failed to drop tables (may not exist): %v", err)
 	}
 
 	// Migrate tables
-	err = db.AutoMigrate(&WorkPool{}, &Worker{})
+	err = db.AutoMigrate(&WorkPool{})
 	require.NoError(t, err)
 
 	return db
@@ -226,5 +226,4 @@ func setupPoolServiceTestDB(t *testing.T) *gorm.DB {
 func cleanupPoolServiceTestDB(db *gorm.DB) {
 	// Clean up test data
 	db.Exec("DELETE FROM work_pools")
-	db.Exec("DELETE FROM workers")
 }

@@ -24,186 +24,9 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/api/v1/sessions": {
+        "/api/v1/events": {
             "get": {
-                "description": "Get a list of browser sessions with optional filtering by status and time range",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "sessions"
-                ],
-                "summary": "List browser sessions",
-                "parameters": [
-                    {
-                        "enum": [
-                            "pending",
-                            "starting",
-                            "available",
-                            "claimed",
-                            "running",
-                            "idle",
-                            "completed",
-                            "failed",
-                            "expired",
-                            "crashed",
-                            "timed_out",
-                            "terminated",
-                            "pending",
-                            "starting",
-                            "available",
-                            "claimed",
-                            "running",
-                            "idle",
-                            "completed",
-                            "failed",
-                            "expired",
-                            "crashed",
-                            "timed_out",
-                            "terminated"
-                        ],
-                        "type": "string",
-                        "description": "Filter by session status",
-                        "name": "status",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Filter sessions created after this time (RFC3339)",
-                        "name": "start_time",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Filter sessions created before this time (RFC3339)",
-                        "name": "end_time",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 0,
-                        "description": "Pagination offset",
-                        "name": "offset",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "default": 100,
-                        "description": "Pagination limit",
-                        "name": "limit",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "List of sessions with pagination info",
-                        "schema": {
-                            "$ref": "#/definitions/SessionListResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "description": "Create a new browser session with specified configuration",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "sessions"
-                ],
-                "summary": "Create a new browser session",
-                "parameters": [
-                    {
-                        "description": "Session configuration",
-                        "name": "session",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/Session"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/Session"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/v1/sessions/{id}": {
-            "get": {
-                "description": "Get details of a specific browser session by ID",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "sessions"
-                ],
-                "summary": "Get a browser session",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Session ID (UUID)",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/Session"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/v1/sessions/{id}/events": {
-            "get": {
-                "description": "Get a list of session events with optional filtering by event type and time range",
+                "description": "Get a list of events for browser sessions with optional filtering by session ID, event type, time range, and pagination",
                 "consumes": [
                     "application/json"
                 ],
@@ -217,10 +40,9 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Session ID (UUID)",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
+                        "description": "Session ID (UUID) - alternative to path parameter",
+                        "name": "session_id",
+                        "in": "query"
                     },
                     {
                         "enum": [
@@ -259,46 +81,51 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Filter events created after this time (RFC3339)",
+                        "example": "\"2023-01-01T00:00:00Z\"",
+                        "description": "Filter events after this time (RFC3339 format)",
                         "name": "start_time",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Filter events created before this time (RFC3339)",
+                        "example": "\"2023-01-01T23:59:59Z\"",
+                        "description": "Filter events before this time (RFC3339 format)",
                         "name": "end_time",
                         "in": "query"
                     },
                     {
+                        "minimum": 0,
                         "type": "integer",
                         "default": 0,
-                        "description": "Pagination offset",
+                        "description": "Number of events to skip",
                         "name": "offset",
                         "in": "query"
                     },
                     {
+                        "maximum": 1000,
+                        "minimum": 1,
                         "type": "integer",
                         "default": 100,
-                        "description": "Pagination limit",
+                        "description": "Maximum number of events to return",
                         "name": "limit",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "List of events with pagination info",
+                        "description": "List of events",
                         "schema": {
                             "$ref": "#/definitions/SessionEventListResponse"
                         }
                     },
                     "400": {
-                        "description": "Bad Request",
+                        "description": "Invalid session ID or parameters",
                         "schema": {
                             "$ref": "#/definitions/ErrorResponse"
                         }
                     },
                     "500": {
-                        "description": "Internal Server Error",
+                        "description": "Internal server error",
                         "schema": {
                             "$ref": "#/definitions/ErrorResponse"
                         }
@@ -306,7 +133,823 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "Create a new event for a session (e.g., page navigation, user interaction)",
+                "description": "Create a new event for a browser session. The session ID can be provided in the URL path or in the request body.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "Create a session event",
+                "parameters": [
+                    {
+                        "description": "Event data",
+                        "name": "event",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/SessionEvent"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Event created successfully",
+                        "schema": {
+                            "$ref": "#/definitions/SessionEvent"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request data or missing session_id/event",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/metrics": {
+            "post": {
+                "description": "Create performance metrics for a browser session. The session ID can be provided in the URL path or in the request body.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "metrics"
+                ],
+                "summary": "Create session metrics",
+                "parameters": [
+                    {
+                        "description": "Performance metrics data",
+                        "name": "metrics",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/SessionMetrics"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Metrics created successfully",
+                        "schema": {
+                            "$ref": "#/definitions/SessionMetrics"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request data or missing session_id",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/monitoring": {
+            "get": {
+                "description": "Get comprehensive monitoring information including servers, queues, and health",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "monitoring"
+                ],
+                "summary": "Get monitoring information",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/MonitoringInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_monitoring.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/monitoring/health": {
+            "get": {
+                "description": "Get health status of the worker system",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "monitoring"
+                ],
+                "summary": "Get health status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/monitoring/queues": {
+            "get": {
+                "description": "Get statistics for all queues",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "monitoring"
+                ],
+                "summary": "Get queue statistics",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/asynq.QueueInfo"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_monitoring.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/monitoring/queues/{name}": {
+            "get": {
+                "description": "Get detailed information about a specific queue",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "monitoring"
+                ],
+                "summary": "Get queue details",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Queue name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/asynq.QueueInfo"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_monitoring.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_monitoring.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/monitoring/queues/{name}/archived": {
+            "delete": {
+                "description": "Delete all archived (failed) tasks from a queue",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "monitoring"
+                ],
+                "summary": "Delete archived tasks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Queue name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_monitoring.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/monitoring/queues/{name}/pause": {
+            "post": {
+                "description": "Pause processing of a specific queue",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "monitoring"
+                ],
+                "summary": "Pause queue",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Queue name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_monitoring.MessageResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_monitoring.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/monitoring/queues/{name}/retry": {
+            "delete": {
+                "description": "Delete all retry tasks from a queue",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "monitoring"
+                ],
+                "summary": "Delete retry tasks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Queue name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_monitoring.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/monitoring/queues/{name}/tasks": {
+            "get": {
+                "description": "Get sample of tasks in various states for a queue",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "monitoring"
+                ],
+                "summary": "Get queue tasks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Queue name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/TaskInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_monitoring.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/monitoring/queues/{name}/unpause": {
+            "post": {
+                "description": "Resume processing of a paused queue",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "monitoring"
+                ],
+                "summary": "Unpause queue",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Queue name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_monitoring.MessageResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_monitoring.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/monitoring/scheduler": {
+            "get": {
+                "description": "Get all scheduled and periodic tasks",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "monitoring"
+                ],
+                "summary": "Get scheduler entries",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/asynq.SchedulerEntry"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_monitoring.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/monitoring/servers": {
+            "get": {
+                "description": "Get information about all Asynq servers (workers)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "monitoring"
+                ],
+                "summary": "Get server information",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/asynq.ServerInfo"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_monitoring.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/sessions": {
+            "get": {
+                "description": "Get a list of browser sessions with optional filtering by status, time range, and pagination",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sessions"
+                ],
+                "summary": "List browser sessions",
+                "parameters": [
+                    {
+                        "enum": [
+                            "pending",
+                            "starting",
+                            "available",
+                            "claimed",
+                            "running",
+                            "idle",
+                            "completed",
+                            "failed",
+                            "expired",
+                            "crashed",
+                            "timed_out",
+                            "terminated"
+                        ],
+                        "type": "string",
+                        "description": "Filter by session status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "\"2023-01-01T00:00:00Z\"",
+                        "description": "Filter sessions created after this time (RFC3339 format)",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "\"2023-01-01T23:59:59Z\"",
+                        "description": "Filter sessions created before this time (RFC3339 format)",
+                        "name": "end_time",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Number of sessions to skip",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 1000,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Maximum number of sessions to return",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of sessions",
+                        "schema": {
+                            "$ref": "#/definitions/SessionListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new browser session with specified configuration. The session will be created in pending status and a start task will be enqueued.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sessions"
+                ],
+                "summary": "Create a new browser session",
+                "parameters": [
+                    {
+                        "description": "Session configuration",
+                        "name": "session",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/Session"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Session created successfully",
+                        "schema": {
+                            "$ref": "#/definitions/Session"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request data",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/sessions/{id}": {
+            "get": {
+                "description": "Get detailed information about a specific browser session by its ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sessions"
+                ],
+                "summary": "Get a browser session",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Session ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Session details",
+                        "schema": {
+                            "$ref": "#/definitions/Session"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid session ID",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Session not found",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Stop and terminate a running browser session. If the session is already in a terminal state, it will return success immediately.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sessions"
+                ],
+                "summary": "Delete a browser session",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Session ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Session termination initiated or already terminated",
+                        "schema": {
+                            "$ref": "#/definitions/MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid session ID",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Session not found",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/sessions/{id}/events": {
+            "get": {
+                "description": "Get a list of events for browser sessions with optional filtering by session ID, event type, time range, and pagination",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "List session events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Session ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Session ID (UUID) - alternative to path parameter",
+                        "name": "session_id",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "session_created",
+                            "resource_allocated",
+                            "session_starting",
+                            "container_started",
+                            "browser_started",
+                            "session_available",
+                            "session_claimed",
+                            "session_assigned",
+                            "session_ready",
+                            "session_active",
+                            "session_idle",
+                            "heartbeat",
+                            "pool_added",
+                            "pool_removed",
+                            "pool_drained",
+                            "session_completed",
+                            "session_expired",
+                            "session_timed_out",
+                            "session_terminated",
+                            "startup_failed",
+                            "browser_crashed",
+                            "container_crashed",
+                            "resource_exhausted",
+                            "network_error",
+                            "status_changed",
+                            "config_updated",
+                            "health_check"
+                        ],
+                        "type": "string",
+                        "description": "Filter by event type",
+                        "name": "event_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "\"2023-01-01T00:00:00Z\"",
+                        "description": "Filter events after this time (RFC3339 format)",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "\"2023-01-01T23:59:59Z\"",
+                        "description": "Filter events before this time (RFC3339 format)",
+                        "name": "end_time",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Number of events to skip",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 1000,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Maximum number of events to return",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of events",
+                        "schema": {
+                            "$ref": "#/definitions/SessionEventListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid session ID or parameters",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new event for a browser session. The session ID can be provided in the URL path or in the request body.",
                 "consumes": [
                     "application/json"
                 ],
@@ -326,7 +969,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Session event data",
+                        "description": "Event data",
                         "name": "event",
                         "in": "body",
                         "required": true,
@@ -337,19 +980,19 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "201": {
-                        "description": "Created",
+                        "description": "Event created successfully",
                         "schema": {
                             "$ref": "#/definitions/SessionEvent"
                         }
                     },
                     "400": {
-                        "description": "Bad Request",
+                        "description": "Invalid request data or missing session_id/event",
                         "schema": {
                             "$ref": "#/definitions/ErrorResponse"
                         }
                     },
                     "500": {
-                        "description": "Internal Server Error",
+                        "description": "Internal server error",
                         "schema": {
                             "$ref": "#/definitions/ErrorResponse"
                         }
@@ -359,7 +1002,7 @@ const docTemplate = `{
         },
         "/api/v1/sessions/{id}/metrics": {
             "post": {
-                "description": "Create performance metrics for a session (CPU, memory, network usage)",
+                "description": "Create performance metrics for a browser session. The session ID can be provided in the URL path or in the request body.",
                 "consumes": [
                     "application/json"
                 ],
@@ -379,7 +1022,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Session metrics data",
+                        "description": "Performance metrics data",
                         "name": "metrics",
                         "in": "body",
                         "required": true,
@@ -390,260 +1033,19 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "201": {
-                        "description": "Created",
+                        "description": "Metrics created successfully",
                         "schema": {
                             "$ref": "#/definitions/SessionMetrics"
                         }
                     },
                     "400": {
-                        "description": "Bad Request",
+                        "description": "Invalid request data or missing session_id",
                         "schema": {
                             "$ref": "#/definitions/ErrorResponse"
                         }
                     },
                     "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/v1/workers": {
-            "get": {
-                "description": "Get a list of all workers with optional filtering",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "workers"
-                ],
-                "summary": "List workers",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Filter by work pool ID (UUID)",
-                        "name": "pool_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "boolean",
-                        "description": "Filter by online status",
-                        "name": "online",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "List of workers",
-                        "schema": {
-                            "$ref": "#/definitions/WorkerListResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/v1/workers/{id}": {
-            "get": {
-                "description": "Get details of a specific worker by ID",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "workers"
-                ],
-                "summary": "Get a worker",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Worker ID (UUID)",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/Worker"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "description": "Delete a worker from the pool",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "workers"
-                ],
-                "summary": "Delete a worker",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Worker ID (UUID)",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/MessageResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/v1/workers/{id}/heartbeat": {
-            "post": {
-                "description": "Update worker status with current active session count",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "workers"
-                ],
-                "summary": "Send worker heartbeat",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Worker ID (UUID)",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Heartbeat data",
-                        "name": "heartbeat",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/WorkerHeartbeatRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/MessageResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/v1/workers/{id}/pause": {
-            "post": {
-                "description": "Pause or resume a worker to control its availability",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "workers"
-                ],
-                "summary": "Pause or resume a worker",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Worker ID (UUID)",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Pause configuration",
-                        "name": "pause",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/WorkerPauseRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/MessageResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
+                        "description": "Internal server error",
                         "schema": {
                             "$ref": "#/definitions/ErrorResponse"
                         }
@@ -1063,12 +1465,12 @@ const docTemplate = `{
             ]
         },
         "ErrorResponse": {
-            "description": "Error response with details",
+            "description": "Standard error response format",
             "type": "object",
             "properties": {
                 "error": {
                     "type": "string",
-                    "example": "Validation failed"
+                    "example": "Invalid session ID"
                 }
             }
         },
@@ -1079,6 +1481,35 @@ const docTemplate = `{
                 "message": {
                     "type": "string",
                     "example": "Operation completed successfully"
+                }
+            }
+        },
+        "MonitoringInfo": {
+            "type": "object",
+            "properties": {
+                "queue_health": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/QueueHealth"
+                    }
+                },
+                "queue_stats": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/asynq.QueueInfo"
+                    }
+                },
+                "server_stats": {
+                    "$ref": "#/definitions/ServerStats"
+                },
+                "servers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/asynq.ServerInfo"
+                    }
+                },
+                "timestamp": {
+                    "type": "string"
                 }
             }
         },
@@ -1125,6 +1556,39 @@ const docTemplate = `{
                 "proxy_username": {
                     "type": "string",
                     "example": "user"
+                }
+            }
+        },
+        "QueueHealth": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "integer"
+                },
+                "archived": {
+                    "type": "integer"
+                },
+                "completed": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "paused": {
+                    "type": "boolean"
+                },
+                "pending": {
+                    "type": "integer"
+                },
+                "retry": {
+                    "type": "integer"
+                },
+                "scheduled": {
+                    "type": "integer"
+                },
+                "status": {
+                    "description": "\"healthy\", \"warning\", \"critical\", \"error\", \"paused\"",
+                    "type": "string"
                 }
             }
         },
@@ -1216,6 +1680,24 @@ const docTemplate = `{
                 }
             }
         },
+        "ServerStats": {
+            "type": "object",
+            "properties": {
+                "active_servers": {
+                    "type": "integer"
+                },
+                "total_queues": {
+                    "description": "queue name -\u003e count of servers processing it",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "total_servers": {
+                    "type": "integer"
+                }
+            }
+        },
         "Session": {
             "description": "Browser session with configuration and status",
             "type": "object",
@@ -1273,7 +1755,7 @@ const docTemplate = `{
                 },
                 "live_url": {
                     "type": "string",
-                    "example": "http://localhost:7900"
+                    "example": "http://localhost:80"
                 },
                 "operating_system": {
                     "allOf": [
@@ -1328,13 +1810,9 @@ const docTemplate = `{
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440002"
                 },
-                "worker_id": {
-                    "type": "string",
-                    "example": "550e8400-e29b-41d4-a716-446655440001"
-                },
                 "ws_endpoint": {
                     "type": "string",
-                    "example": "ws://localhost:9222/devtools/browser"
+                    "example": "ws://localhost:80/devtools/browser"
                 }
             }
         },
@@ -1543,6 +2021,44 @@ const docTemplate = `{
                 "StatusTerminated"
             ]
         },
+        "TaskInfo": {
+            "type": "object",
+            "properties": {
+                "active_tasks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/asynq.TaskInfo"
+                    }
+                },
+                "archived_tasks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/asynq.TaskInfo"
+                    }
+                },
+                "pending_tasks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/asynq.TaskInfo"
+                    }
+                },
+                "queue": {
+                    "type": "string"
+                },
+                "retry_tasks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/asynq.TaskInfo"
+                    }
+                },
+                "scheduled_tasks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/asynq.TaskInfo"
+                    }
+                }
+            }
+        },
         "WorkPool": {
             "description": "Work pool configuration for managing browser workers",
             "type": "object",
@@ -1632,97 +2148,363 @@ const docTemplate = `{
                 }
             }
         },
-        "Worker": {
-            "description": "Worker instance that handles browser sessions",
+        "asynq.QueueInfo": {
             "type": "object",
             "properties": {
                 "active": {
-                    "type": "integer",
-                    "example": 0
+                    "description": "Number of active tasks.",
+                    "type": "integer"
                 },
-                "hostname": {
-                    "type": "string",
-                    "example": "browsergrid-worker-1"
+                "aggregating": {
+                    "description": "Number of aggregating tasks.",
+                    "type": "integer"
                 },
-                "id": {
-                    "type": "string",
-                    "example": "550e8400-e29b-41d4-a716-446655440001"
+                "archived": {
+                    "description": "Number of archived tasks.",
+                    "type": "integer"
                 },
-                "last_beat": {
-                    "type": "string",
-                    "example": "2023-01-01T00:00:00Z"
+                "completed": {
+                    "description": "Number of stored completed tasks.",
+                    "type": "integer"
                 },
-                "max_slots": {
-                    "type": "integer",
-                    "example": 1
+                "failed": {
+                    "description": "Total number of tasks failed to be processed within the given date (counter resets daily).",
+                    "type": "integer"
                 },
-                "name": {
-                    "type": "string",
-                    "example": "worker-chrome-001"
+                "failedTotal": {
+                    "description": "Total number of tasks failed (cumulative).",
+                    "type": "integer"
                 },
-                "paused": {
-                    "type": "boolean",
-                    "example": false
+                "groups": {
+                    "description": "Groups is the total number of groups in the queue.",
+                    "type": "integer"
                 },
-                "pool_id": {
-                    "type": "string",
-                    "example": "550e8400-e29b-41d4-a716-446655440000"
-                },
-                "provider": {
+                "latency": {
+                    "description": "Latency of the queue, measured by the oldest pending task in the queue.",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/ProviderType"
+                            "$ref": "#/definitions/time.Duration"
                         }
-                    ],
-                    "example": "docker"
+                    ]
                 },
-                "started_at": {
-                    "type": "string",
-                    "example": "2023-01-01T00:00:00Z"
+                "memoryUsage": {
+                    "description": "Total number of bytes that the queue and its tasks require to be stored in redis.\nIt is an approximate memory usage value in bytes since the value is computed by sampling.",
+                    "type": "integer"
+                },
+                "paused": {
+                    "description": "Paused indicates whether the queue is paused.\nIf true, tasks in the queue will not be processed.",
+                    "type": "boolean"
+                },
+                "pending": {
+                    "description": "Number of pending tasks.",
+                    "type": "integer"
+                },
+                "processed": {
+                    "description": "Total number of tasks being processed within the given date (counter resets daily).\nThe number includes both succeeded and failed tasks.",
+                    "type": "integer"
+                },
+                "processedTotal": {
+                    "description": "Total number of tasks processed (cumulative).",
+                    "type": "integer"
+                },
+                "queue": {
+                    "description": "Name of the queue.",
+                    "type": "string"
+                },
+                "retry": {
+                    "description": "Number of retry tasks.",
+                    "type": "integer"
+                },
+                "scheduled": {
+                    "description": "Number of scheduled tasks.",
+                    "type": "integer"
+                },
+                "size": {
+                    "description": "Size is the total number of tasks in the queue.\nThe value is the sum of Pending, Active, Scheduled, Retry, Aggregating and Archived.",
+                    "type": "integer"
+                },
+                "timestamp": {
+                    "description": "Time when this queue info snapshot was taken.",
+                    "type": "string"
                 }
             }
         },
-        "WorkerHeartbeatRequest": {
-            "description": "Heartbeat data with active session count",
+        "asynq.SchedulerEntry": {
             "type": "object",
             "properties": {
-                "active": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "example": 2
+                "id": {
+                    "description": "Identifier of this entry.",
+                    "type": "string"
+                },
+                "next": {
+                    "description": "Next shows the next time the task will be enqueued.",
+                    "type": "string"
+                },
+                "opts": {
+                    "description": "Opts is the options for the periodic task.",
+                    "type": "array",
+                    "items": {}
+                },
+                "prev": {
+                    "description": "Prev shows the last time the task was enqueued.\nZero time if task was never enqueued.",
+                    "type": "string"
+                },
+                "spec": {
+                    "description": "Spec describes the schedule of this entry.",
+                    "type": "string"
+                },
+                "task": {
+                    "description": "Periodic Task registered for this entry.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/asynq.Task"
+                        }
+                    ]
                 }
             }
         },
-        "WorkerListResponse": {
-            "description": "Response containing a list of workers",
+        "asynq.ServerInfo": {
             "type": "object",
             "properties": {
-                "total": {
-                    "type": "integer",
-                    "example": 10
-                },
-                "workers": {
+                "activeWorkers": {
+                    "description": "A List of active workers currently processing tasks.",
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/Worker"
+                        "$ref": "#/definitions/asynq.WorkerInfo"
                     }
+                },
+                "concurrency": {
+                    "description": "Server configuration details.\nSee Config doc for field descriptions.",
+                    "type": "integer"
+                },
+                "host": {
+                    "description": "Host machine on which the server is running.",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "Unique Identifier for the server.",
+                    "type": "string"
+                },
+                "pid": {
+                    "description": "PID of the process in which the server is running.",
+                    "type": "integer"
+                },
+                "queues": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "started": {
+                    "description": "Time the server started.",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "Status indicates the status of the server.\nTODO: Update comment with more details.",
+                    "type": "string"
+                },
+                "strictPriority": {
+                    "type": "boolean"
                 }
             }
         },
-        "WorkerPauseRequest": {
-            "description": "Pause configuration for a worker",
+        "asynq.Task": {
+            "type": "object"
+        },
+        "asynq.TaskInfo": {
             "type": "object",
             "properties": {
-                "paused": {
-                    "type": "boolean",
-                    "example": true
+                "completedAt": {
+                    "description": "CompletedAt is the time when the task is processed successfully.\nZero value (i.e. time.Time{}) indicates no value.",
+                    "type": "string"
+                },
+                "deadline": {
+                    "description": "Deadline is the deadline for the task, zero value if not specified.",
+                    "type": "string"
+                },
+                "group": {
+                    "description": "Group is the name of the group in which the task belongs.\n\nTasks in the same queue can be grouped together by Group name and will be aggregated into one task\nby a Server processing the queue.\n\nEmpty string (default) indicates task does not belong to any groups, and no aggregation will be applied to the task.",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "ID is the identifier of the task.",
+                    "type": "string"
+                },
+                "isOrphaned": {
+                    "description": "IsOrphaned describes whether the task is left in active state with no worker processing it.\nAn orphaned task indicates that the worker has crashed or experienced network failures and was not able to\nextend its lease on the task.\n\nThis task will be recovered by running a server against the queue the task is in.\nThis field is only applicable to tasks with TaskStateActive.",
+                    "type": "boolean"
+                },
+                "lastErr": {
+                    "description": "LastErr is the error message from the last failure.",
+                    "type": "string"
+                },
+                "lastFailedAt": {
+                    "description": "LastFailedAt is the time time of the last failure if any.\nIf the task has no failures, LastFailedAt is zero time (i.e. time.Time{}).",
+                    "type": "string"
+                },
+                "maxRetry": {
+                    "description": "MaxRetry is the maximum number of times the task can be retried.",
+                    "type": "integer"
+                },
+                "nextProcessAt": {
+                    "description": "NextProcessAt is the time the task is scheduled to be processed,\nzero if not applicable.",
+                    "type": "string"
+                },
+                "payload": {
+                    "description": "Payload is the payload data of the task.",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "queue": {
+                    "description": "Queue is the name of the queue in which the task belongs.",
+                    "type": "string"
+                },
+                "result": {
+                    "description": "Result holds the result data associated with the task.\nUse ResultWriter to write result data from the Handler.",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "retention": {
+                    "description": "Retention is duration of the retention period after the task is successfully processed.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/time.Duration"
+                        }
+                    ]
+                },
+                "retried": {
+                    "description": "Retried is the number of times the task has retried so far.",
+                    "type": "integer"
+                },
+                "state": {
+                    "description": "State indicates the task state.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/asynq.TaskState"
+                        }
+                    ]
+                },
+                "timeout": {
+                    "description": "Timeout is the duration the task can be processed by Handler before being retried,\nzero if not specified",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/time.Duration"
+                        }
+                    ]
+                },
+                "type": {
+                    "description": "Type is the type name of the task.",
+                    "type": "string"
                 }
             }
+        },
+        "asynq.TaskState": {
+            "type": "integer",
+            "enum": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7
+            ],
+            "x-enum-varnames": [
+                "TaskStateActive",
+                "TaskStatePending",
+                "TaskStateScheduled",
+                "TaskStateRetry",
+                "TaskStateArchived",
+                "TaskStateCompleted",
+                "TaskStateAggregating"
+            ]
+        },
+        "asynq.WorkerInfo": {
+            "type": "object",
+            "properties": {
+                "deadline": {
+                    "description": "Time the worker needs to finish processing the task by.",
+                    "type": "string"
+                },
+                "queue": {
+                    "description": "Queue from which the worker got its task.",
+                    "type": "string"
+                },
+                "started": {
+                    "description": "Time the worker started processing the task.",
+                    "type": "string"
+                },
+                "taskID": {
+                    "description": "ID of the task the worker is processing.",
+                    "type": "string"
+                },
+                "taskPayload": {
+                    "description": "Payload of the task the worker is processing.",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "taskType": {
+                    "description": "Type of the task the worker is processing.",
+                    "type": "string"
+                }
+            }
+        },
+        "internal_monitoring.ErrorResponse": {
+            "description": "Error response",
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "Internal server error"
+                }
+            }
+        },
+        "internal_monitoring.MessageResponse": {
+            "description": "Simple message response",
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "Operation successful"
+                }
+            }
+        },
+        "time.Duration": {
+            "type": "integer",
+            "enum": [
+                -9223372036854775808,
+                9223372036854775807,
+                1,
+                1000,
+                1000000,
+                1000000000,
+                60000000000,
+                3600000000000
+            ],
+            "x-enum-varnames": [
+                "minDuration",
+                "maxDuration",
+                "Nanosecond",
+                "Microsecond",
+                "Millisecond",
+                "Second",
+                "Minute",
+                "Hour"
+            ]
         }
     },
     "securityDefinitions": {
-        "BasicAuth": {
-            "type": "basic"
+        "ApiKeyAuth": {
+            "description": "API key for authentication. Can also be provided via query parameter 'api_key' or Authorization header.",
+            "type": "apiKey",
+            "name": "X-API-Key",
+            "in": "header"
         }
     },
     "externalDocs": {
@@ -1733,12 +2515,12 @@ const docTemplate = `{
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "1.0",
-	Host:             "localhost:8080",
-	BasePath:         "/api/v1",
+	Version:          "2.0",
+	Host:             "localhost:8765",
+	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "BrowserGrid API",
-	Description:      "BrowserGrid is a distributed browser automation platform that provides scalable browser sessions and worker pool management.",
+	Description:      "BrowserGrid is a distributed browser automation platform using task queues for scalable browser session management.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

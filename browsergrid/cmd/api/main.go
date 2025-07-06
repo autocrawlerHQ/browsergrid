@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os/signal"
@@ -10,17 +11,20 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hibiken/asynq"
+
 	"github.com/autocrawlerHQ/browsergrid/internal/config"
 	"github.com/autocrawlerHQ/browsergrid/internal/db"
 	"github.com/autocrawlerHQ/browsergrid/internal/poolmgr"
 	"github.com/autocrawlerHQ/browsergrid/internal/router"
+	"github.com/autocrawlerHQ/browsergrid/internal/scheduler"
 
 	_ "github.com/autocrawlerHQ/browsergrid/docs"
 )
 
 // @title           BrowserGrid API
-// @version         1.0
-// @description     BrowserGrid is a distributed browser automation platform that provides scalable browser sessions and worker pool management.
+// @version         2.0
+// @description     BrowserGrid is a distributed browser automation platform using task queues for scalable browser session management.
 // @termsOfService  http://swagger.io/terms/
 
 // @contact.name   API Support
@@ -30,20 +34,30 @@ import (
 // @license.name  Apache 2.0
 // @license.url   http://www.apache.org/licenses/LICENSE-2.0.html
 
-// @host      localhost:8080
-// @BasePath  /api/v1
+// @host      localhost:8765
+// @BasePath  /
 
-// @securityDefinitions.basic  BasicAuth
+// @securityDefinitions.apikey ApiKeyAuth
+// @in header
+// @name X-API-Key
+// @description API key for authentication. Can also be provided via query parameter 'api_key' or Authorization header.
 
 // @externalDocs.description  OpenAPI
 // @externalDocs.url          https://swagger.io/resources/open-api/
 
 func main() {
 	cfg := config.Load()
-	log.Printf("Starting BrowserGrid v2 API server on port %d", cfg.Port)
+	log.Printf("========================================")
+	log.Printf("      BrowserGrid v2 API Server        ")
+	log.Printf("========================================")
+	log.Printf("Port: %d", cfg.Port)
+	log.Printf("Redis: %s", cfg.RedisAddr)
+	log.Printf("========================================")
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Initialize database
 	database, err := db.New(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("db: %v", err)
@@ -61,11 +75,38 @@ func main() {
 	if err := sqlDB.Ping(); err != nil {
 		log.Fatalf("db ping failed: %v", err)
 	}
-	log.Println("Database connection established")
+	log.Println("✓ Database connection established")
 
-	log.Println("Migrations are handled by Atlas during container startup")
+	// Initialize Redis/Asynq
+	redisOpt := asynq.RedisClientOpt{
+		Addr:     cfg.RedisAddr,
+		Password: cfg.RedisPassword,
+		DB:       cfg.RedisDB,
+	}
 
-	reconciler := poolmgr.NewReconciler(database.DB)
+	// Create Asynq client for API
+	taskClient := asynq.NewClient(redisOpt)
+	defer taskClient.Close()
+
+	// Test Redis connection
+	inspector := asynq.NewInspector(redisOpt)
+	if _, err := inspector.Queues(); err != nil {
+		log.Fatalf("Failed to connect to Redis: %v", err)
+	}
+	log.Println("✓ Redis connection established")
+
+	// Start scheduler service (handles pool scaling and cleanup)
+	schedulerSvc := scheduler.New(database.DB, redisOpt)
+	go func() {
+		log.Println("Starting scheduler service...")
+		if err := schedulerSvc.Start(); err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("Scheduler service error: %v", err)
+		}
+	}()
+	defer schedulerSvc.Stop()
+
+	// Start pool reconciler (monitors pools and enqueues scaling tasks)
+	reconciler := poolmgr.NewReconciler(database.DB, taskClient)
 	reconcilerCtx, reconcilerCancel := context.WithCancel(ctx)
 	defer reconcilerCancel()
 
@@ -78,15 +119,22 @@ func main() {
 		}
 	}()
 
-	r := router.New(database, reconciler)
+	// Create HTTP router
+	r := router.New(database, reconciler, taskClient, redisOpt)
 
 	srv := &http.Server{
-		Addr:    ":" + strconv.Itoa(cfg.Port),
-		Handler: r,
+		Addr:         ":" + strconv.Itoa(cfg.Port),
+		Handler:      r,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
+	// Start monitoring endpoints
+	go startMonitoring(redisOpt)
+
 	go func() {
-		log.Printf("API listening on :%d", cfg.Port)
+		log.Printf("✓ API listening on :%d", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("listen: %s\n", err)
 		}
@@ -94,11 +142,46 @@ func main() {
 
 	<-ctx.Done()
 
-	log.Printf("Graceful shutdown...")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	log.Printf("Graceful shutdown initiated...")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	// Shutdown HTTP server
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Fatal("Server forced to shutdown:", err)
 	}
-	log.Println("Server exited")
+
+	log.Println("✓ Server exited cleanly")
+}
+
+// startMonitoring starts a simple monitoring endpoint for queue stats
+func startMonitoring(redisOpt asynq.RedisClientOpt) {
+	inspector := asynq.NewInspector(redisOpt)
+
+	http.HandleFunc("/metrics/queues", func(w http.ResponseWriter, r *http.Request) {
+		queues, err := inspector.Queues()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/plain")
+		for _, q := range queues {
+			info, err := inspector.GetQueueInfo(q)
+			if err != nil {
+				continue
+			}
+			fmt.Fprintf(w, "queue_%s_pending %d\n", q, info.Pending)
+			fmt.Fprintf(w, "queue_%s_active %d\n", q, info.Active)
+			fmt.Fprintf(w, "queue_%s_scheduled %d\n", q, info.Scheduled)
+			fmt.Fprintf(w, "queue_%s_retry %d\n", q, info.Retry)
+			fmt.Fprintf(w, "queue_%s_archived %d\n", q, info.Archived)
+			fmt.Fprintf(w, "queue_%s_completed %d\n", q, info.Completed)
+		}
+	})
+
+	log.Println("✓ Monitoring endpoint available at :9090/metrics/queues")
+	if err := http.ListenAndServe(":9090", nil); err != nil {
+		log.Printf("Monitoring server error: %v", err)
+	}
 }

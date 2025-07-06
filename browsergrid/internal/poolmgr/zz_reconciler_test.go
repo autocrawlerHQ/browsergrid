@@ -9,10 +9,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/modules/redis"
 	"github.com/testcontainers/testcontainers-go/wait"
 	"gorm.io/datatypes"
 	postgresDriver "gorm.io/driver/postgres"
@@ -20,19 +22,23 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
+	"github.com/autocrawlerHQ/browsergrid/internal/tasks"
 	"github.com/autocrawlerHQ/browsergrid/internal/workpool"
 )
 
 var (
-	testContainer *postgres.PostgresContainer
-	testConnStr   string
+	testPostgresContainer *postgres.PostgresContainer
+	testRedisContainer    *redis.RedisContainer
+	testConnStr           string
+	testRedisAddr         string
 )
 
 func TestMain(m *testing.M) {
 	ctx := context.Background()
 
+	// Start PostgreSQL container
 	var err error
-	testContainer, err = postgres.Run(ctx,
+	testPostgresContainer, err = postgres.Run(ctx,
 		"postgres:15-alpine",
 		postgres.WithDatabase("testdb"),
 		postgres.WithUsername("testuser"),
@@ -47,15 +53,41 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Failed to start PostgreSQL container: %v", err)
 	}
 
-	testConnStr, err = testContainer.ConnectionString(ctx, "sslmode=disable")
+	testConnStr, err = testPostgresContainer.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
 		log.Fatalf("Failed to get connection string: %v", err)
 	}
 
+	// Start Redis container
+	testRedisContainer, err = redis.Run(ctx,
+		"redis:7-alpine",
+		redis.WithSnapshotting(10, 1),
+		redis.WithLogLevel(redis.LogLevelVerbose),
+	)
+	if err != nil {
+		log.Fatalf("Failed to start Redis container: %v", err)
+	}
+
+	redisHost, err := testRedisContainer.Host(ctx)
+	if err != nil {
+		log.Fatalf("Failed to get Redis host: %v", err)
+	}
+
+	redisPort, err := testRedisContainer.MappedPort(ctx, "6379")
+	if err != nil {
+		log.Fatalf("Failed to get Redis port: %v", err)
+	}
+
+	testRedisAddr = redisHost + ":" + redisPort.Port()
+
 	code := m.Run()
 
-	if err := testContainer.Terminate(ctx); err != nil {
+	// Cleanup
+	if err := testPostgresContainer.Terminate(ctx); err != nil {
 		log.Printf("Failed to terminate PostgreSQL container: %v", err)
+	}
+	if err := testRedisContainer.Terminate(ctx); err != nil {
+		log.Printf("Failed to terminate Redis container: %v", err)
 	}
 
 	os.Exit(code)
@@ -68,7 +100,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 
 	err = db.Migrator().DropTable(
-		&workpool.WorkPool{}, &workpool.Worker{},
+		&workpool.WorkPool{},
 		&sessions.Session{}, &sessions.SessionEvent{},
 		&sessions.SessionMetrics{}, &sessions.Pool{})
 	if err != nil {
@@ -76,7 +108,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	}
 
 	err = db.AutoMigrate(
-		&workpool.WorkPool{}, &workpool.Worker{},
+		&workpool.WorkPool{},
 		&sessions.Session{}, &sessions.SessionEvent{},
 		&sessions.SessionMetrics{}, &sessions.Pool{})
 	require.NoError(t, err)
@@ -84,97 +116,44 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func setupTestRedisClient(t *testing.T) *asynq.Client {
+	redisOpt := asynq.RedisClientOpt{Addr: testRedisAddr}
+	client := asynq.NewClient(redisOpt)
+
+	// Clear any existing tasks
+	inspector := asynq.NewInspector(redisOpt)
+	queues, _ := inspector.Queues()
+	for _, q := range queues {
+		inspector.DeleteAllPendingTasks(q)
+		inspector.DeleteAllScheduledTasks(q)
+		inspector.DeleteAllRetryTasks(q)
+		inspector.DeleteAllArchivedTasks(q)
+	}
+
+	return client
+}
+
 func TestNewReconciler(t *testing.T) {
 	db := setupTestDB(t)
+	client := setupTestRedisClient(t)
+	defer client.Close()
 
-	reconciler := NewReconciler(db)
+	reconciler := NewReconciler(db, client)
 
 	assert.NotNil(t, reconciler)
 	assert.Equal(t, db, reconciler.db)
 	assert.NotNil(t, reconciler.wpStore)
 	assert.NotNil(t, reconciler.sessStore)
-	assert.Equal(t, 1*time.Minute, reconciler.tickInterval)
-	assert.Equal(t, 5*time.Minute, reconciler.workerTTL)
-	assert.True(t, reconciler.cleanupEnabled)
-}
-
-func TestReconciler_CreateSessionFromPool(t *testing.T) {
-	db := setupTestDB(t)
-	reconciler := NewReconciler(db)
-
-	tests := []struct {
-		name string
-		pool *workpool.WorkPool
-	}{
-		{
-			name: "basic pool",
-			pool: &workpool.WorkPool{
-				ID:             uuid.New(),
-				Name:           "test-pool",
-				Provider:       workpool.ProviderDocker,
-				MaxConcurrency: 10,
-				DefaultEnv:     datatypes.JSON(`{"ENV": "test"}`),
-			},
-		},
-		{
-			name: "pool with default image",
-			pool: &workpool.WorkPool{
-				ID:             uuid.New(),
-				Name:           "test-pool",
-				Provider:       workpool.ProviderDocker,
-				MaxConcurrency: 10,
-				DefaultEnv:     datatypes.JSON(`{"ENV": "test"}`),
-				DefaultImage:   stringPtr("playwright:latest"),
-			},
-		},
-		{
-			name: "pool with nil default env",
-			pool: &workpool.WorkPool{
-				ID:             uuid.New(),
-				Name:           "test-pool",
-				Provider:       workpool.ProviderDocker,
-				MaxConcurrency: 10,
-				DefaultEnv:     nil,
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sess := reconciler.createSessionFromPool(tt.pool)
-
-			assert.NotEqual(t, uuid.Nil, sess.ID)
-			assert.Equal(t, sessions.BrowserChrome, sess.Browser)
-			assert.Equal(t, sessions.VerLatest, sess.Version)
-			assert.True(t, sess.Headless)
-			assert.Equal(t, sessions.OSLinux, sess.OperatingSystem)
-			assert.Equal(t, 1920, sess.Screen.Width)
-			assert.Equal(t, 1080, sess.Screen.Height)
-			assert.Equal(t, sessions.StatusPending, sess.Status)
-			assert.Equal(t, string(tt.pool.Provider), sess.Provider)
-			assert.Equal(t, &tt.pool.ID, sess.WorkPoolID)
-			assert.False(t, sess.IsPooled)
-
-			if tt.pool.DefaultEnv != nil {
-				var env map[string]interface{}
-				err := json.Unmarshal(sess.Environment, &env)
-				assert.NoError(t, err)
-				assert.Equal(t, "test", env["ENV"])
-			}
-
-			if tt.pool.DefaultImage != nil {
-				var env map[string]interface{}
-				err := json.Unmarshal(sess.Environment, &env)
-				assert.NoError(t, err)
-				assert.Equal(t, *tt.pool.DefaultImage, env["BROWSER_IMAGE"])
-			}
-		})
-	}
+	assert.NotNil(t, reconciler.taskClient)
+	assert.Equal(t, 30*time.Second, reconciler.tickInterval)
 }
 
 func TestReconciler_CountSessionsByStatus(t *testing.T) {
 	db := setupTestDB(t)
-	reconciler := NewReconciler(db)
+	client := setupTestRedisClient(t)
+	defer client.Close()
+
+	reconciler := NewReconciler(db, client)
 	ctx := context.Background()
 
 	pool := &workpool.WorkPool{
@@ -228,170 +207,208 @@ func TestReconciler_CountSessionsByStatus(t *testing.T) {
 	}
 }
 
-func TestReconciler_CleanupIdleSessionsForPool(t *testing.T) {
+func TestReconciler_ReconcilePool(t *testing.T) {
 	db := setupTestDB(t)
-	reconciler := NewReconciler(db)
+	client := setupTestRedisClient(t)
+	defer client.Close()
+
+	reconciler := NewReconciler(db, client)
 	ctx := context.Background()
+
+	// Create an inspector to check enqueued tasks
+	inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: testRedisAddr})
+
+	tests := []struct {
+		name             string
+		pool             *workpool.WorkPool
+		existingSessions []sessions.SessionStatus
+		expectScaleTask  bool
+		expectedSessions int
+	}{
+		{
+			name: "scale up to min size",
+			pool: &workpool.WorkPool{
+				Name:           "test-pool",
+				Provider:       workpool.ProviderDocker,
+				MaxConcurrency: 10,
+				MinSize:        3,
+				AutoScale:      true,
+			},
+			existingSessions: []sessions.SessionStatus{
+				sessions.StatusRunning,
+			},
+			expectScaleTask:  true,
+			expectedSessions: 2, // Need 2 more to reach min size of 3
+		},
+		{
+			name: "no scaling needed",
+			pool: &workpool.WorkPool{
+				Name:           "test-pool-no-scale",
+				Provider:       workpool.ProviderDocker,
+				MaxConcurrency: 10,
+				MinSize:        2,
+				AutoScale:      true,
+			},
+			existingSessions: []sessions.SessionStatus{
+				sessions.StatusRunning,
+				sessions.StatusIdle,
+			},
+			expectScaleTask:  false,
+			expectedSessions: 0,
+		},
+		{
+			name: "paused pool - no scaling",
+			pool: &workpool.WorkPool{
+				Name:           "test-pool-paused",
+				Provider:       workpool.ProviderDocker,
+				MaxConcurrency: 10,
+				MinSize:        5,
+				AutoScale:      true,
+				Paused:         true,
+			},
+			existingSessions: []sessions.SessionStatus{},
+			expectScaleTask:  false,
+			expectedSessions: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clear any existing tasks
+			inspector.DeleteAllPendingTasks("low")
+
+			err := reconciler.wpStore.CreateWorkPool(ctx, tt.pool)
+			require.NoError(t, err)
+
+			for _, status := range tt.existingSessions {
+				sess := createTestSession(tt.pool.ID, status)
+				err = reconciler.sessStore.CreateSession(ctx, sess)
+				require.NoError(t, err)
+			}
+
+			err = reconciler.reconcilePool(ctx, tt.pool)
+			assert.NoError(t, err)
+
+			// Give it a moment to process
+			time.Sleep(100 * time.Millisecond)
+
+			// Check if scaling task was enqueued
+			pendingTasks, err := inspector.ListPendingTasks("low")
+			require.NoError(t, err)
+
+			foundScaleTask := false
+			var scalePayload tasks.PoolScalePayload
+
+			for _, task := range pendingTasks {
+				if task.Type == tasks.TypePoolScale {
+					foundScaleTask = true
+					// Parse the payload to check desired sessions
+					err = json.Unmarshal(task.Payload, &scalePayload)
+					require.NoError(t, err)
+					break
+				}
+			}
+
+			assert.Equal(t, tt.expectScaleTask, foundScaleTask, "Scale task expectation mismatch")
+
+			if tt.expectScaleTask && foundScaleTask {
+				assert.Equal(t, tt.pool.ID, scalePayload.WorkPoolID)
+				assert.Equal(t, tt.expectedSessions, scalePayload.DesiredSessions)
+			}
+
+			// Cleanup
+			err = db.Where("work_pool_id = ?", tt.pool.ID).Delete(&sessions.Session{}).Error
+			require.NoError(t, err)
+			err = db.Delete(tt.pool).Error
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestReconciler_HandleIdleSessions(t *testing.T) {
+	db := setupTestDB(t)
+	client := setupTestRedisClient(t)
+	defer client.Close()
+
+	reconciler := NewReconciler(db, client)
+	ctx := context.Background()
+
+	// Create an inspector to check enqueued tasks
+	inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: testRedisAddr})
 
 	pool := &workpool.WorkPool{
 		Name:           "test-pool",
 		Provider:       workpool.ProviderDocker,
 		MaxConcurrency: 10,
-		MaxIdleTime:    60,
+		MaxIdleTime:    60, // 60 seconds
+		AutoScale:      true,
 	}
 	err := reconciler.wpStore.CreateWorkPool(ctx, pool)
 	require.NoError(t, err)
 
+	// Create an old idle session
 	oldSession := createTestSession(pool.ID, sessions.StatusIdle)
 	oldSession.UpdatedAt = time.Now().Add(-2 * time.Minute)
 	err = reconciler.sessStore.CreateSession(ctx, oldSession)
 	require.NoError(t, err)
 
+	// Create a recent idle session
 	recentSession := createTestSession(pool.ID, sessions.StatusIdle)
 	err = reconciler.sessStore.CreateSession(ctx, recentSession)
 	require.NoError(t, err)
 
-	runningSession := createTestSession(pool.ID, sessions.StatusRunning)
-	runningSession.UpdatedAt = time.Now().Add(-2 * time.Minute)
-	err = reconciler.sessStore.CreateSession(ctx, runningSession)
-	require.NoError(t, err)
+	// Clear any existing tasks
+	inspector.DeleteAllPendingTasks("default")
 
-	err = reconciler.cleanupIdleSessionsForPool(ctx, pool)
+	// Run reconciliation
+	err = reconciler.reconcilePool(ctx, pool)
 	assert.NoError(t, err)
 
-	var expiredCount int64
-	err = db.Model(&sessions.Session{}).
-		Where("work_pool_id = ? AND status = ?", pool.ID, sessions.StatusExpired).
-		Count(&expiredCount).Error
-	assert.NoError(t, err)
-	assert.Equal(t, int64(1), expiredCount)
+	// Give it a moment to process
+	time.Sleep(100 * time.Millisecond)
 
-	var idleCount int64
-	err = db.Model(&sessions.Session{}).
-		Where("work_pool_id = ? AND status = ?", pool.ID, sessions.StatusIdle).
-		Count(&idleCount).Error
-	assert.NoError(t, err)
-	assert.Equal(t, int64(1), idleCount)
-
-	var runningCount int64
-	err = db.Model(&sessions.Session{}).
-		Where("work_pool_id = ? AND status = ?", pool.ID, sessions.StatusRunning).
-		Count(&runningCount).Error
-	assert.NoError(t, err)
-	assert.Equal(t, int64(1), runningCount)
-}
-
-func TestReconciler_CleanupIdleSessionsForPool_NoTimeout(t *testing.T) {
-	db := setupTestDB(t)
-	reconciler := NewReconciler(db)
-	ctx := context.Background()
-
-	pool := &workpool.WorkPool{
-		Name:           "test-pool",
-		Provider:       workpool.ProviderDocker,
-		MaxConcurrency: 10,
-		MaxIdleTime:    0,
-	}
-	err := reconciler.wpStore.CreateWorkPool(ctx, pool)
+	// Check if stop task was enqueued for the old idle session
+	pendingTasks, err := inspector.ListPendingTasks("default")
 	require.NoError(t, err)
 
-	err = reconciler.wpStore.UpdateWorkPool(ctx, pool.ID, map[string]interface{}{
-		"max_idle_time": 0,
-	})
-	require.NoError(t, err)
+	foundStopTask := false
+	for _, task := range pendingTasks {
+		if task.Type == tasks.TypeSessionStop {
+			var payload tasks.SessionStopPayload
+			err = json.Unmarshal(task.Payload, &payload)
+			require.NoError(t, err)
 
-	pool, err = reconciler.wpStore.GetWorkPool(ctx, pool.ID)
-	require.NoError(t, err)
-	require.Equal(t, 0, pool.MaxIdleTime)
-
-	oldSession := createTestSession(pool.ID, sessions.StatusIdle)
-	oldSession.UpdatedAt = time.Now().Add(-2 * time.Hour)
-	err = reconciler.sessStore.CreateSession(ctx, oldSession)
-	require.NoError(t, err)
-
-	err = reconciler.cleanupIdleSessionsForPool(ctx, pool)
-	assert.NoError(t, err)
-
-	var expiredCount int64
-	err = db.Model(&sessions.Session{}).
-		Where("work_pool_id = ? AND status = ?", pool.ID, sessions.StatusExpired).
-		Count(&expiredCount).Error
-	assert.NoError(t, err)
-	assert.Equal(t, int64(0), expiredCount)
-}
-
-func TestReconciler_CleanupExpiredSessions(t *testing.T) {
-	db := setupTestDB(t)
-	reconciler := NewReconciler(db)
-	ctx := context.Background()
-
-	pool := &workpool.WorkPool{
-		Name:           "test-pool",
-		Provider:       workpool.ProviderDocker,
-		MaxConcurrency: 10,
-	}
-	err := reconciler.wpStore.CreateWorkPool(ctx, pool)
-	require.NoError(t, err)
-
-	oldTerminatedStatuses := []sessions.SessionStatus{
-		sessions.StatusCompleted,
-		sessions.StatusFailed,
-		sessions.StatusExpired,
-		sessions.StatusCrashed,
-		sessions.StatusTimedOut,
-		sessions.StatusTerminated,
+			if payload.SessionID == oldSession.ID && payload.Reason == "idle_timeout" {
+				foundStopTask = true
+				break
+			}
+		}
 	}
 
-	for i, status := range oldTerminatedStatuses {
-		sess := createTestSession(pool.ID, status)
-		sess.UpdatedAt = time.Now().Add(-25 * time.Hour)
-		err = reconciler.sessStore.CreateSession(ctx, sess)
-		require.NoError(t, err, "Failed to create session %d", i)
-	}
-
-	recentSession := createTestSession(pool.ID, sessions.StatusCompleted)
-	err = reconciler.sessStore.CreateSession(ctx, recentSession)
-	require.NoError(t, err)
-
-	activeSession := createTestSession(pool.ID, sessions.StatusRunning)
-	activeSession.UpdatedAt = time.Now().Add(-25 * time.Hour)
-	err = reconciler.sessStore.CreateSession(ctx, activeSession)
-	require.NoError(t, err)
-
-	var totalBefore int64
-	err = db.Model(&sessions.Session{}).
-		Where("work_pool_id = ?", pool.ID).
-		Count(&totalBefore).Error
-	assert.NoError(t, err)
-	assert.Equal(t, int64(8), totalBefore)
-
-	err = reconciler.cleanupExpiredSessions(ctx)
-	assert.NoError(t, err)
-
-	var totalAfter int64
-	err = db.Model(&sessions.Session{}).
-		Where("work_pool_id = ?", pool.ID).
-		Count(&totalAfter).Error
-	assert.NoError(t, err)
-	assert.Equal(t, int64(2), totalAfter)
+	assert.True(t, foundStopTask, "Expected stop task for idle session")
 }
 
 func TestReconciler_GetPoolStats(t *testing.T) {
 	db := setupTestDB(t)
-	reconciler := NewReconciler(db)
+	client := setupTestRedisClient(t)
+	defer client.Close()
+
+	reconciler := NewReconciler(db, client)
 	ctx := context.Background()
 
 	pool := &workpool.WorkPool{
-		Name:           "test-pool",
-		Provider:       workpool.ProviderDocker,
-		MaxConcurrency: 10,
-		MinSize:        2,
-		AutoScale:      true,
-		MaxIdleTime:    1800,
+		Name:               "test-pool",
+		Provider:           workpool.ProviderDocker,
+		MaxConcurrency:     10,
+		MinSize:            2,
+		AutoScale:          true,
+		MaxIdleTime:        1800,
+		MaxSessionDuration: 3600,
 	}
 	err := reconciler.wpStore.CreateWorkPool(ctx, pool)
 	require.NoError(t, err)
 
+	// Create sessions with different statuses
 	sessionStatuses := []sessions.SessionStatus{
 		sessions.StatusPending,
 		sessions.StatusPending,
@@ -406,68 +423,41 @@ func TestReconciler_GetPoolStats(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	now := time.Now()
-	worker1 := &workpool.Worker{
-		PoolID:   pool.ID,
-		Name:     "worker-1",
-		Provider: workpool.ProviderDocker,
-		MaxSlots: 5,
-		Active:   2,
-		LastBeat: now,
-	}
-	err = reconciler.wpStore.RegisterWorker(ctx, worker1)
-	require.NoError(t, err)
-
-	worker2 := &workpool.Worker{
-		PoolID:   pool.ID,
-		Name:     "worker-2",
-		Provider: workpool.ProviderDocker,
-		MaxSlots: 3,
-		Active:   1,
-		LastBeat: now.Add(-10 * time.Minute),
-	}
-	err = reconciler.wpStore.RegisterWorker(ctx, worker2)
-	require.NoError(t, err)
-
-	offlineTime := now.Add(-10 * time.Minute)
-	err = db.Model(&workpool.Worker{}).
-		Where("id = ?", worker2.ID).
-		Update("last_beat", offlineTime).Error
-	require.NoError(t, err)
-
-	worker2Retrieved, err := reconciler.wpStore.GetWorker(ctx, worker2.ID)
-	require.NoError(t, err)
-	assert.False(t, worker2Retrieved.IsOnline(5*time.Minute), "Worker2 should be offline")
-
 	stats, err := reconciler.GetPoolStats(ctx, pool.ID)
 	assert.NoError(t, err)
 	assert.NotNil(t, stats)
 
+	// Verify pool info
 	assert.Equal(t, pool.ID, stats.Pool.ID)
 	assert.Equal(t, pool.Name, stats.Pool.Name)
 
+	// Verify session counts
 	assert.Equal(t, 2, stats.SessionsByStatus[sessions.StatusPending])
 	assert.Equal(t, 1, stats.SessionsByStatus[sessions.StatusRunning])
 	assert.Equal(t, 1, stats.SessionsByStatus[sessions.StatusIdle])
 	assert.Equal(t, 1, stats.SessionsByStatus[sessions.StatusCompleted])
 
-	assert.Equal(t, 2, stats.TotalWorkers)
-	assert.Equal(t, 1, stats.OnlineWorkers)
-	assert.Equal(t, 5, stats.TotalWorkerSlots)
-	assert.Equal(t, 2, stats.ActiveWorkerSlots)
-
-	expectedUtilization := float64(2) / float64(10) * 100
+	// Verify utilization
+	expectedUtilization := float64(2) / float64(10) * 100 // (running + idle) / max * 100
 	assert.Equal(t, expectedUtilization, stats.UtilizationPercent)
 
+	// Verify scaling info
 	assert.Equal(t, pool.MinSize, stats.ScalingInfo.MinSize)
 	assert.Equal(t, pool.MaxConcurrency, stats.ScalingInfo.MaxConcurrency)
 	assert.Equal(t, pool.AutoScale, stats.ScalingInfo.AutoScale)
 	assert.Equal(t, pool.MaxIdleTime, stats.ScalingInfo.MaxIdleTime)
+	assert.Equal(t, pool.MaxSessionDuration, stats.ScalingInfo.MaxSessionDuration)
+
+	// Queue stats should be present (even if zero)
+	assert.NotNil(t, stats.QueueStats)
 }
 
 func TestReconciler_GetPoolStats_NonExistentPool(t *testing.T) {
 	db := setupTestDB(t)
-	reconciler := NewReconciler(db)
+	client := setupTestRedisClient(t)
+	defer client.Close()
+
+	reconciler := NewReconciler(db, client)
 	ctx := context.Background()
 
 	nonExistentID := uuid.New()
@@ -476,137 +466,12 @@ func TestReconciler_GetPoolStats_NonExistentPool(t *testing.T) {
 	assert.Nil(t, stats)
 }
 
-func TestReconciler_ReconcilePool(t *testing.T) {
-	db := setupTestDB(t)
-	reconciler := NewReconciler(db)
-	ctx := context.Background()
-
-	tests := []struct {
-		name                    string
-		pool                    *workpool.WorkPool
-		existingSessions        []sessions.SessionStatus
-		workers                 []*workpool.Worker
-		expectedSessionsCreated int
-	}{
-		{
-			name: "scale up to min size",
-			pool: &workpool.WorkPool{
-				Name:           "test-pool",
-				Provider:       workpool.ProviderDocker,
-				MaxConcurrency: 10,
-				MinSize:        3,
-				AutoScale:      true,
-			},
-			existingSessions: []sessions.SessionStatus{
-				sessions.StatusRunning,
-			},
-			workers: []*workpool.Worker{
-				{
-					Name:     "worker-1",
-					Provider: workpool.ProviderDocker,
-					MaxSlots: 5,
-					Active:   1,
-					LastBeat: time.Now(),
-				},
-			},
-			expectedSessionsCreated: 2,
-		},
-		{
-			name: "no scaling needed",
-			pool: &workpool.WorkPool{
-				Name:           "test-pool",
-				Provider:       workpool.ProviderDocker,
-				MaxConcurrency: 10,
-				MinSize:        2,
-				AutoScale:      true,
-			},
-			existingSessions: []sessions.SessionStatus{
-				sessions.StatusRunning,
-				sessions.StatusIdle,
-			},
-			workers: []*workpool.Worker{
-				{
-					Name:     "worker-1",
-					Provider: workpool.ProviderDocker,
-					MaxSlots: 5,
-					Active:   2,
-					LastBeat: time.Now(),
-				},
-			},
-			expectedSessionsCreated: 0,
-		},
-		{
-			name: "paused pool - no scaling",
-			pool: &workpool.WorkPool{
-				Name:           "test-pool",
-				Provider:       workpool.ProviderDocker,
-				MaxConcurrency: 10,
-				MinSize:        5,
-				AutoScale:      true,
-				Paused:         true,
-			},
-			existingSessions: []sessions.SessionStatus{},
-			workers: []*workpool.Worker{
-				{
-					Name:     "worker-1",
-					Provider: workpool.ProviderDocker,
-					MaxSlots: 5,
-					Active:   0,
-					LastBeat: time.Now(),
-				},
-			},
-			expectedSessionsCreated: 0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := reconciler.wpStore.CreateWorkPool(ctx, tt.pool)
-			require.NoError(t, err)
-
-			for _, status := range tt.existingSessions {
-				sess := createTestSession(tt.pool.ID, status)
-				err = reconciler.sessStore.CreateSession(ctx, sess)
-				require.NoError(t, err)
-			}
-
-			for _, worker := range tt.workers {
-				worker.PoolID = tt.pool.ID
-				err = reconciler.wpStore.RegisterWorker(ctx, worker)
-				require.NoError(t, err)
-			}
-
-			var sessionsBefore int64
-			err = db.Model(&sessions.Session{}).
-				Where("work_pool_id = ?", tt.pool.ID).
-				Count(&sessionsBefore).Error
-			require.NoError(t, err)
-
-			err = reconciler.reconcilePool(ctx, tt.pool)
-			assert.NoError(t, err)
-
-			var sessionsAfter int64
-			err = db.Model(&sessions.Session{}).
-				Where("work_pool_id = ?", tt.pool.ID).
-				Count(&sessionsAfter).Error
-			require.NoError(t, err)
-
-			sessionsCreated := int(sessionsAfter - sessionsBefore)
-			assert.Equal(t, tt.expectedSessionsCreated, sessionsCreated)
-
-			err = db.Where("work_pool_id = ?", tt.pool.ID).Delete(&sessions.Session{}).Error
-			require.NoError(t, err)
-			err = db.Where("pool_id = ?", tt.pool.ID).Delete(&workpool.Worker{}).Error
-			require.NoError(t, err)
-			err = db.Delete(tt.pool).Error
-			require.NoError(t, err)
-		})
-	}
-}
-
 func TestReconciler_Start_StopOnContext(t *testing.T) {
 	db := setupTestDB(t)
-	reconciler := NewReconciler(db)
+	client := setupTestRedisClient(t)
+	defer client.Close()
+
+	reconciler := NewReconciler(db, client)
 	reconciler.tickInterval = 100 * time.Millisecond
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
@@ -616,6 +481,42 @@ func TestReconciler_Start_StopOnContext(t *testing.T) {
 	assert.Equal(t, context.DeadlineExceeded, err)
 }
 
+func TestReconciler_ScheduleCleanupTasks(t *testing.T) {
+	db := setupTestDB(t)
+	client := setupTestRedisClient(t)
+	defer client.Close()
+
+	reconciler := NewReconciler(db, client)
+
+	// Schedule cleanup tasks
+	err := reconciler.scheduleCleanupTasks()
+	assert.NoError(t, err)
+
+	// Verify scheduler is running by checking Redis
+	// The scheduler should have registered the cleanup task
+	// Note: This is a basic test - in production you'd want more comprehensive tests
+}
+
+func TestGetQueueNameForProvider(t *testing.T) {
+	tests := []struct {
+		provider workpool.ProviderType
+		expected string
+	}{
+		{workpool.ProviderDocker, "default"},
+		{workpool.ProviderACI, "azure"},
+		{workpool.ProviderLocal, "local"},
+		{"unknown", "default"},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.provider), func(t *testing.T) {
+			result := getQueueNameForProvider(tt.provider)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// Helper function to create test sessions
 func createTestSession(poolID uuid.UUID, status sessions.SessionStatus) *sessions.Session {
 	envData, _ := json.Marshal(map[string]string{})
 	return &sessions.Session{
@@ -635,9 +536,7 @@ func createTestSession(poolID uuid.UUID, status sessions.SessionStatus) *session
 		Provider:    "docker",
 		WorkPoolID:  &poolID,
 		IsPooled:    false,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
 	}
-}
-
-func stringPtr(s string) *string {
-	return &s
 }

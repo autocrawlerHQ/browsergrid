@@ -1,4 +1,4 @@
-basePath: /api/v1
+basePath: /
 definitions:
   Browser:
     description: Supported browser types
@@ -31,10 +31,10 @@ definitions:
     - VerCanary
     - VerDev
   ErrorResponse:
-    description: Error response with details
+    description: Standard error response format
     properties:
       error:
-        example: Validation failed
+        example: Invalid session ID
         type: string
     type: object
   MessageResponse:
@@ -42,6 +42,25 @@ definitions:
     properties:
       message:
         example: Operation completed successfully
+        type: string
+    type: object
+  MonitoringInfo:
+    properties:
+      queue_health:
+        additionalProperties:
+          $ref: '#/definitions/QueueHealth'
+        type: object
+      queue_stats:
+        additionalProperties:
+          $ref: '#/definitions/asynq.QueueInfo'
+        type: object
+      server_stats:
+        $ref: '#/definitions/ServerStats'
+      servers:
+        items:
+          $ref: '#/definitions/asynq.ServerInfo'
+        type: array
+      timestamp:
         type: string
     type: object
   OperatingSystem:
@@ -77,6 +96,28 @@ definitions:
         type: string
       proxy_username:
         example: user
+        type: string
+    type: object
+  QueueHealth:
+    properties:
+      active:
+        type: integer
+      archived:
+        type: integer
+      completed:
+        type: integer
+      message:
+        type: string
+      paused:
+        type: boolean
+      pending:
+        type: integer
+      retry:
+        type: integer
+      scheduled:
+        type: integer
+      status:
+        description: '"healthy", "warning", "critical", "error", "paused"'
         type: string
     type: object
   ResourceLimits:
@@ -144,6 +185,18 @@ definitions:
         example: 1920
         type: integer
     type: object
+  ServerStats:
+    properties:
+      active_servers:
+        type: integer
+      total_queues:
+        additionalProperties:
+          type: integer
+        description: queue name -> count of servers processing it
+        type: object
+      total_servers:
+        type: integer
+    type: object
   Session:
     description: Browser session with configuration and status
     properties:
@@ -184,7 +237,7 @@ definitions:
         example: false
         type: boolean
       live_url:
-        example: http://localhost:7900
+        example: http://localhost:80
         type: string
       operating_system:
         allOf:
@@ -219,11 +272,8 @@ definitions:
       work_pool_id:
         example: 550e8400-e29b-41d4-a716-446655440002
         type: string
-      worker_id:
-        example: 550e8400-e29b-41d4-a716-446655440001
-        type: string
       ws_endpoint:
-        example: ws://localhost:9222/devtools/browser
+        example: ws://localhost:80/devtools/browser
         type: string
     type: object
   SessionEvent:
@@ -392,6 +442,31 @@ definitions:
     - StatusCrashed
     - StatusTimedOut
     - StatusTerminated
+  TaskInfo:
+    properties:
+      active_tasks:
+        items:
+          $ref: '#/definitions/asynq.TaskInfo'
+        type: array
+      archived_tasks:
+        items:
+          $ref: '#/definitions/asynq.TaskInfo'
+        type: array
+      pending_tasks:
+        items:
+          $ref: '#/definitions/asynq.TaskInfo'
+        type: array
+      queue:
+        type: string
+      retry_tasks:
+        items:
+          $ref: '#/definitions/asynq.TaskInfo'
+        type: array
+      scheduled_tasks:
+        items:
+          $ref: '#/definitions/asynq.TaskInfo'
+        type: array
+    type: object
   WorkPool:
     description: Work pool configuration for managing browser workers
     properties:
@@ -455,222 +530,324 @@ definitions:
         example: 5
         type: integer
     type: object
-  Worker:
-    description: Worker instance that handles browser sessions
+  asynq.QueueInfo:
     properties:
       active:
-        example: 0
+        description: Number of active tasks.
         type: integer
-      hostname:
-        example: browsergrid-worker-1
+      aggregating:
+        description: Number of aggregating tasks.
+        type: integer
+      archived:
+        description: Number of archived tasks.
+        type: integer
+      completed:
+        description: Number of stored completed tasks.
+        type: integer
+      failed:
+        description: Total number of tasks failed to be processed within the given
+          date (counter resets daily).
+        type: integer
+      failedTotal:
+        description: Total number of tasks failed (cumulative).
+        type: integer
+      groups:
+        description: Groups is the total number of groups in the queue.
+        type: integer
+      latency:
+        allOf:
+        - $ref: '#/definitions/time.Duration'
+        description: Latency of the queue, measured by the oldest pending task in
+          the queue.
+      memoryUsage:
+        description: |-
+          Total number of bytes that the queue and its tasks require to be stored in redis.
+          It is an approximate memory usage value in bytes since the value is computed by sampling.
+        type: integer
+      paused:
+        description: |-
+          Paused indicates whether the queue is paused.
+          If true, tasks in the queue will not be processed.
+        type: boolean
+      pending:
+        description: Number of pending tasks.
+        type: integer
+      processed:
+        description: |-
+          Total number of tasks being processed within the given date (counter resets daily).
+          The number includes both succeeded and failed tasks.
+        type: integer
+      processedTotal:
+        description: Total number of tasks processed (cumulative).
+        type: integer
+      queue:
+        description: Name of the queue.
+        type: string
+      retry:
+        description: Number of retry tasks.
+        type: integer
+      scheduled:
+        description: Number of scheduled tasks.
+        type: integer
+      size:
+        description: |-
+          Size is the total number of tasks in the queue.
+          The value is the sum of Pending, Active, Scheduled, Retry, Aggregating and Archived.
+        type: integer
+      timestamp:
+        description: Time when this queue info snapshot was taken.
+        type: string
+    type: object
+  asynq.SchedulerEntry:
+    properties:
+      id:
+        description: Identifier of this entry.
+        type: string
+      next:
+        description: Next shows the next time the task will be enqueued.
+        type: string
+      opts:
+        description: Opts is the options for the periodic task.
+        items: {}
+        type: array
+      prev:
+        description: |-
+          Prev shows the last time the task was enqueued.
+          Zero time if task was never enqueued.
+        type: string
+      spec:
+        description: Spec describes the schedule of this entry.
+        type: string
+      task:
+        allOf:
+        - $ref: '#/definitions/asynq.Task'
+        description: Periodic Task registered for this entry.
+    type: object
+  asynq.ServerInfo:
+    properties:
+      activeWorkers:
+        description: A List of active workers currently processing tasks.
+        items:
+          $ref: '#/definitions/asynq.WorkerInfo'
+        type: array
+      concurrency:
+        description: |-
+          Server configuration details.
+          See Config doc for field descriptions.
+        type: integer
+      host:
+        description: Host machine on which the server is running.
         type: string
       id:
-        example: 550e8400-e29b-41d4-a716-446655440001
+        description: Unique Identifier for the server.
         type: string
-      last_beat:
-        example: "2023-01-01T00:00:00Z"
-        type: string
-      max_slots:
-        example: 1
+      pid:
+        description: PID of the process in which the server is running.
         type: integer
-      name:
-        example: worker-chrome-001
+      queues:
+        additionalProperties:
+          type: integer
+        type: object
+      started:
+        description: Time the server started.
         type: string
-      paused:
-        example: false
+      status:
+        description: |-
+          Status indicates the status of the server.
+          TODO: Update comment with more details.
+        type: string
+      strictPriority:
         type: boolean
-      pool_id:
-        example: 550e8400-e29b-41d4-a716-446655440000
-        type: string
-      provider:
-        allOf:
-        - $ref: '#/definitions/ProviderType'
-        example: docker
-      started_at:
-        example: "2023-01-01T00:00:00Z"
-        type: string
     type: object
-  WorkerHeartbeatRequest:
-    description: Heartbeat data with active session count
-    properties:
-      active:
-        example: 2
-        minimum: 0
-        type: integer
+  asynq.Task:
     type: object
-  WorkerListResponse:
-    description: Response containing a list of workers
+  asynq.TaskInfo:
     properties:
-      total:
-        example: 10
+      completedAt:
+        description: |-
+          CompletedAt is the time when the task is processed successfully.
+          Zero value (i.e. time.Time{}) indicates no value.
+        type: string
+      deadline:
+        description: Deadline is the deadline for the task, zero value if not specified.
+        type: string
+      group:
+        description: |-
+          Group is the name of the group in which the task belongs.
+
+          Tasks in the same queue can be grouped together by Group name and will be aggregated into one task
+          by a Server processing the queue.
+
+          Empty string (default) indicates task does not belong to any groups, and no aggregation will be applied to the task.
+        type: string
+      id:
+        description: ID is the identifier of the task.
+        type: string
+      isOrphaned:
+        description: |-
+          IsOrphaned describes whether the task is left in active state with no worker processing it.
+          An orphaned task indicates that the worker has crashed or experienced network failures and was not able to
+          extend its lease on the task.
+
+          This task will be recovered by running a server against the queue the task is in.
+          This field is only applicable to tasks with TaskStateActive.
+        type: boolean
+      lastErr:
+        description: LastErr is the error message from the last failure.
+        type: string
+      lastFailedAt:
+        description: |-
+          LastFailedAt is the time time of the last failure if any.
+          If the task has no failures, LastFailedAt is zero time (i.e. time.Time{}).
+        type: string
+      maxRetry:
+        description: MaxRetry is the maximum number of times the task can be retried.
         type: integer
-      workers:
+      nextProcessAt:
+        description: |-
+          NextProcessAt is the time the task is scheduled to be processed,
+          zero if not applicable.
+        type: string
+      payload:
+        description: Payload is the payload data of the task.
         items:
-          $ref: '#/definitions/Worker'
+          type: integer
         type: array
+      queue:
+        description: Queue is the name of the queue in which the task belongs.
+        type: string
+      result:
+        description: |-
+          Result holds the result data associated with the task.
+          Use ResultWriter to write result data from the Handler.
+        items:
+          type: integer
+        type: array
+      retention:
+        allOf:
+        - $ref: '#/definitions/time.Duration'
+        description: Retention is duration of the retention period after the task
+          is successfully processed.
+      retried:
+        description: Retried is the number of times the task has retried so far.
+        type: integer
+      state:
+        allOf:
+        - $ref: '#/definitions/asynq.TaskState'
+        description: State indicates the task state.
+      timeout:
+        allOf:
+        - $ref: '#/definitions/time.Duration'
+        description: |-
+          Timeout is the duration the task can be processed by Handler before being retried,
+          zero if not specified
+      type:
+        description: Type is the type name of the task.
+        type: string
     type: object
-  WorkerPauseRequest:
-    description: Pause configuration for a worker
+  asynq.TaskState:
+    enum:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 5
+    - 6
+    - 7
+    type: integer
+    x-enum-varnames:
+    - TaskStateActive
+    - TaskStatePending
+    - TaskStateScheduled
+    - TaskStateRetry
+    - TaskStateArchived
+    - TaskStateCompleted
+    - TaskStateAggregating
+  asynq.WorkerInfo:
     properties:
-      paused:
-        example: true
-        type: boolean
+      deadline:
+        description: Time the worker needs to finish processing the task by.
+        type: string
+      queue:
+        description: Queue from which the worker got its task.
+        type: string
+      started:
+        description: Time the worker started processing the task.
+        type: string
+      taskID:
+        description: ID of the task the worker is processing.
+        type: string
+      taskPayload:
+        description: Payload of the task the worker is processing.
+        items:
+          type: integer
+        type: array
+      taskType:
+        description: Type of the task the worker is processing.
+        type: string
     type: object
+  internal_monitoring.ErrorResponse:
+    description: Error response
+    properties:
+      error:
+        example: Internal server error
+        type: string
+    type: object
+  internal_monitoring.MessageResponse:
+    description: Simple message response
+    properties:
+      message:
+        example: Operation successful
+        type: string
+    type: object
+  time.Duration:
+    enum:
+    - -9223372036854775808
+    - 9223372036854775807
+    - 1
+    - 1000
+    - 1000000
+    - 1000000000
+    - 60000000000
+    - 3600000000000
+    type: integer
+    x-enum-varnames:
+    - minDuration
+    - maxDuration
+    - Nanosecond
+    - Microsecond
+    - Millisecond
+    - Second
+    - Minute
+    - Hour
 externalDocs:
   description: OpenAPI
   url: https://swagger.io/resources/open-api/
-host: localhost:8080
+host: localhost:8765
 info:
   contact:
     email: support@swagger.io
     name: API Support
     url: http://www.swagger.io/support
-  description: BrowserGrid is a distributed browser automation platform that provides
-    scalable browser sessions and worker pool management.
+  description: BrowserGrid is a distributed browser automation platform using task
+    queues for scalable browser session management.
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
   termsOfService: http://swagger.io/terms/
   title: BrowserGrid API
-  version: "1.0"
+  version: "2.0"
 paths:
-  /api/v1/sessions:
+  /api/v1/events:
     get:
       consumes:
       - application/json
-      description: Get a list of browser sessions with optional filtering by status
-        and time range
+      description: Get a list of events for browser sessions with optional filtering
+        by session ID, event type, time range, and pagination
       parameters:
-      - description: Filter by session status
-        enum:
-        - pending
-        - starting
-        - available
-        - claimed
-        - running
-        - idle
-        - completed
-        - failed
-        - expired
-        - crashed
-        - timed_out
-        - terminated
-        - pending
-        - starting
-        - available
-        - claimed
-        - running
-        - idle
-        - completed
-        - failed
-        - expired
-        - crashed
-        - timed_out
-        - terminated
+      - description: Session ID (UUID) - alternative to path parameter
         in: query
-        name: status
-        type: string
-      - description: Filter sessions created after this time (RFC3339)
-        in: query
-        name: start_time
-        type: string
-      - description: Filter sessions created before this time (RFC3339)
-        in: query
-        name: end_time
-        type: string
-      - default: 0
-        description: Pagination offset
-        in: query
-        name: offset
-        type: integer
-      - default: 100
-        description: Pagination limit
-        in: query
-        name: limit
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: List of sessions with pagination info
-          schema:
-            $ref: '#/definitions/SessionListResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/ErrorResponse'
-      summary: List browser sessions
-      tags:
-      - sessions
-    post:
-      consumes:
-      - application/json
-      description: Create a new browser session with specified configuration
-      parameters:
-      - description: Session configuration
-        in: body
-        name: session
-        required: true
-        schema:
-          $ref: '#/definitions/Session'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/Session'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/ErrorResponse'
-      summary: Create a new browser session
-      tags:
-      - sessions
-  /api/v1/sessions/{id}:
-    get:
-      consumes:
-      - application/json
-      description: Get details of a specific browser session by ID
-      parameters:
-      - description: Session ID (UUID)
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/Session'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/ErrorResponse'
-      summary: Get a browser session
-      tags:
-      - sessions
-  /api/v1/sessions/{id}/events:
-    get:
-      consumes:
-      - application/json
-      description: Get a list of session events with optional filtering by event type
-        and time range
-      parameters:
-      - description: Session ID (UUID)
-        in: path
-        name: id
-        required: true
+        name: session_id
         type: string
       - description: Filter by event type
         enum:
@@ -704,37 +881,42 @@ paths:
         in: query
         name: event_type
         type: string
-      - description: Filter events created after this time (RFC3339)
+      - description: Filter events after this time (RFC3339 format)
+        example: '"2023-01-01T00:00:00Z"'
         in: query
         name: start_time
         type: string
-      - description: Filter events created before this time (RFC3339)
+      - description: Filter events before this time (RFC3339 format)
+        example: '"2023-01-01T23:59:59Z"'
         in: query
         name: end_time
         type: string
       - default: 0
-        description: Pagination offset
+        description: Number of events to skip
         in: query
+        minimum: 0
         name: offset
         type: integer
       - default: 100
-        description: Pagination limit
+        description: Maximum number of events to return
         in: query
+        maximum: 1000
+        minimum: 1
         name: limit
         type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: List of events with pagination info
+          description: List of events
           schema:
             $ref: '#/definitions/SessionEventListResponse'
         "400":
-          description: Bad Request
+          description: Invalid session ID or parameters
           schema:
             $ref: '#/definitions/ErrorResponse'
         "500":
-          description: Internal Server Error
+          description: Internal server error
           schema:
             $ref: '#/definitions/ErrorResponse'
       summary: List session events
@@ -743,14 +925,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: Create a new event for a session (e.g., page navigation, user interaction)
+      description: Create a new event for a browser session. The session ID can be
+        provided in the URL path or in the request body.
       parameters:
-      - description: Session ID (UUID)
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Session event data
+      - description: Event data
         in: body
         name: event
         required: true
@@ -760,33 +938,28 @@ paths:
       - application/json
       responses:
         "201":
-          description: Created
+          description: Event created successfully
           schema:
             $ref: '#/definitions/SessionEvent'
         "400":
-          description: Bad Request
+          description: Invalid request data or missing session_id/event
           schema:
             $ref: '#/definitions/ErrorResponse'
         "500":
-          description: Internal Server Error
+          description: Internal server error
           schema:
             $ref: '#/definitions/ErrorResponse'
       summary: Create a session event
       tags:
       - events
-  /api/v1/sessions/{id}/metrics:
+  /api/v1/metrics:
     post:
       consumes:
       - application/json
-      description: Create performance metrics for a session (CPU, memory, network
-        usage)
+      description: Create performance metrics for a browser session. The session ID
+        can be provided in the URL path or in the request body.
       parameters:
-      - description: Session ID (UUID)
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Session metrics data
+      - description: Performance metrics data
         in: body
         name: metrics
         required: true
@@ -796,57 +969,91 @@ paths:
       - application/json
       responses:
         "201":
-          description: Created
+          description: Metrics created successfully
           schema:
             $ref: '#/definitions/SessionMetrics'
         "400":
-          description: Bad Request
+          description: Invalid request data or missing session_id
           schema:
             $ref: '#/definitions/ErrorResponse'
         "500":
-          description: Internal Server Error
+          description: Internal server error
           schema:
             $ref: '#/definitions/ErrorResponse'
       summary: Create session metrics
       tags:
       - metrics
-  /api/v1/workers:
+  /api/v1/monitoring:
     get:
       consumes:
       - application/json
-      description: Get a list of all workers with optional filtering
-      parameters:
-      - description: Filter by work pool ID (UUID)
-        in: query
-        name: pool_id
-        type: string
-      - description: Filter by online status
-        in: query
-        name: online
-        type: boolean
+      description: Get comprehensive monitoring information including servers, queues,
+        and health
       produces:
       - application/json
       responses:
         "200":
-          description: List of workers
+          description: OK
           schema:
-            $ref: '#/definitions/WorkerListResponse'
+            $ref: '#/definitions/MonitoringInfo'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/ErrorResponse'
-      summary: List workers
+            $ref: '#/definitions/internal_monitoring.ErrorResponse'
+      summary: Get monitoring information
       tags:
-      - workers
-  /api/v1/workers/{id}:
-    delete:
+      - monitoring
+  /api/v1/monitoring/health:
+    get:
       consumes:
       - application/json
-      description: Delete a worker from the pool
+      description: Get health status of the worker system
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get health status
+      tags:
+      - monitoring
+  /api/v1/monitoring/queues:
+    get:
+      consumes:
+      - application/json
+      description: Get statistics for all queues
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/asynq.QueueInfo'
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_monitoring.ErrorResponse'
+      summary: Get queue statistics
+      tags:
+      - monitoring
+  /api/v1/monitoring/queues/{name}:
+    get:
+      consumes:
+      - application/json
+      description: Get detailed information about a specific queue
       parameters:
-      - description: Worker ID (UUID)
+      - description: Queue name
         in: path
-        name: id
+        name: name
         required: true
         type: string
       produces:
@@ -855,120 +1062,501 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/MessageResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/ErrorResponse'
-      summary: Delete a worker
-      tags:
-      - workers
-    get:
-      consumes:
-      - application/json
-      description: Get details of a specific worker by ID
-      parameters:
-      - description: Worker ID (UUID)
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/Worker'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/ErrorResponse'
+            $ref: '#/definitions/asynq.QueueInfo'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/ErrorResponse'
+            $ref: '#/definitions/internal_monitoring.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/ErrorResponse'
-      summary: Get a worker
+            $ref: '#/definitions/internal_monitoring.ErrorResponse'
+      summary: Get queue details
       tags:
-      - workers
-  /api/v1/workers/{id}/heartbeat:
-    post:
+      - monitoring
+  /api/v1/monitoring/queues/{name}/archived:
+    delete:
       consumes:
       - application/json
-      description: Update worker status with current active session count
+      description: Delete all archived (failed) tasks from a queue
       parameters:
-      - description: Worker ID (UUID)
+      - description: Queue name
         in: path
-        name: id
+        name: name
         required: true
         type: string
-      - description: Heartbeat data
-        in: body
-        name: heartbeat
-        required: true
-        schema:
-          $ref: '#/definitions/WorkerHeartbeatRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/MessageResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/ErrorResponse'
+            additionalProperties: true
+            type: object
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/ErrorResponse'
-      summary: Send worker heartbeat
+            $ref: '#/definitions/internal_monitoring.ErrorResponse'
+      summary: Delete archived tasks
       tags:
-      - workers
-  /api/v1/workers/{id}/pause:
+      - monitoring
+  /api/v1/monitoring/queues/{name}/pause:
     post:
       consumes:
       - application/json
-      description: Pause or resume a worker to control its availability
+      description: Pause processing of a specific queue
       parameters:
-      - description: Worker ID (UUID)
+      - description: Queue name
         in: path
-        name: id
+        name: name
         required: true
         type: string
-      - description: Pause configuration
-        in: body
-        name: pause
-        required: true
-        schema:
-          $ref: '#/definitions/WorkerPauseRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/MessageResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/ErrorResponse'
+            $ref: '#/definitions/internal_monitoring.MessageResponse'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/ErrorResponse'
-      summary: Pause or resume a worker
+            $ref: '#/definitions/internal_monitoring.ErrorResponse'
+      summary: Pause queue
       tags:
-      - workers
+      - monitoring
+  /api/v1/monitoring/queues/{name}/retry:
+    delete:
+      consumes:
+      - application/json
+      description: Delete all retry tasks from a queue
+      parameters:
+      - description: Queue name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_monitoring.ErrorResponse'
+      summary: Delete retry tasks
+      tags:
+      - monitoring
+  /api/v1/monitoring/queues/{name}/tasks:
+    get:
+      consumes:
+      - application/json
+      description: Get sample of tasks in various states for a queue
+      parameters:
+      - description: Queue name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/TaskInfo'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_monitoring.ErrorResponse'
+      summary: Get queue tasks
+      tags:
+      - monitoring
+  /api/v1/monitoring/queues/{name}/unpause:
+    post:
+      consumes:
+      - application/json
+      description: Resume processing of a paused queue
+      parameters:
+      - description: Queue name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_monitoring.MessageResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_monitoring.ErrorResponse'
+      summary: Unpause queue
+      tags:
+      - monitoring
+  /api/v1/monitoring/scheduler:
+    get:
+      consumes:
+      - application/json
+      description: Get all scheduled and periodic tasks
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/asynq.SchedulerEntry'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_monitoring.ErrorResponse'
+      summary: Get scheduler entries
+      tags:
+      - monitoring
+  /api/v1/monitoring/servers:
+    get:
+      consumes:
+      - application/json
+      description: Get information about all Asynq servers (workers)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/asynq.ServerInfo'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_monitoring.ErrorResponse'
+      summary: Get server information
+      tags:
+      - monitoring
+  /api/v1/sessions:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of browser sessions with optional filtering by status,
+        time range, and pagination
+      parameters:
+      - description: Filter by session status
+        enum:
+        - pending
+        - starting
+        - available
+        - claimed
+        - running
+        - idle
+        - completed
+        - failed
+        - expired
+        - crashed
+        - timed_out
+        - terminated
+        in: query
+        name: status
+        type: string
+      - description: Filter sessions created after this time (RFC3339 format)
+        example: '"2023-01-01T00:00:00Z"'
+        in: query
+        name: start_time
+        type: string
+      - description: Filter sessions created before this time (RFC3339 format)
+        example: '"2023-01-01T23:59:59Z"'
+        in: query
+        name: end_time
+        type: string
+      - default: 0
+        description: Number of sessions to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - default: 100
+        description: Maximum number of sessions to return
+        in: query
+        maximum: 1000
+        minimum: 1
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of sessions
+          schema:
+            $ref: '#/definitions/SessionListResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: List browser sessions
+      tags:
+      - sessions
+    post:
+      consumes:
+      - application/json
+      description: Create a new browser session with specified configuration. The
+        session will be created in pending status and a start task will be enqueued.
+      parameters:
+      - description: Session configuration
+        in: body
+        name: session
+        required: true
+        schema:
+          $ref: '#/definitions/Session'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Session created successfully
+          schema:
+            $ref: '#/definitions/Session'
+        "400":
+          description: Invalid request data
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Create a new browser session
+      tags:
+      - sessions
+  /api/v1/sessions/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Stop and terminate a running browser session. If the session is
+        already in a terminal state, it will return success immediately.
+      parameters:
+      - description: Session ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Session termination initiated or already terminated
+          schema:
+            $ref: '#/definitions/MessageResponse'
+        "400":
+          description: Invalid session ID
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "404":
+          description: Session not found
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Delete a browser session
+      tags:
+      - sessions
+    get:
+      consumes:
+      - application/json
+      description: Get detailed information about a specific browser session by its
+        ID
+      parameters:
+      - description: Session ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Session details
+          schema:
+            $ref: '#/definitions/Session'
+        "400":
+          description: Invalid session ID
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "404":
+          description: Session not found
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Get a browser session
+      tags:
+      - sessions
+  /api/v1/sessions/{id}/events:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of events for browser sessions with optional filtering
+        by session ID, event type, time range, and pagination
+      parameters:
+      - description: Session ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Session ID (UUID) - alternative to path parameter
+        in: query
+        name: session_id
+        type: string
+      - description: Filter by event type
+        enum:
+        - session_created
+        - resource_allocated
+        - session_starting
+        - container_started
+        - browser_started
+        - session_available
+        - session_claimed
+        - session_assigned
+        - session_ready
+        - session_active
+        - session_idle
+        - heartbeat
+        - pool_added
+        - pool_removed
+        - pool_drained
+        - session_completed
+        - session_expired
+        - session_timed_out
+        - session_terminated
+        - startup_failed
+        - browser_crashed
+        - container_crashed
+        - resource_exhausted
+        - network_error
+        - status_changed
+        - config_updated
+        - health_check
+        in: query
+        name: event_type
+        type: string
+      - description: Filter events after this time (RFC3339 format)
+        example: '"2023-01-01T00:00:00Z"'
+        in: query
+        name: start_time
+        type: string
+      - description: Filter events before this time (RFC3339 format)
+        example: '"2023-01-01T23:59:59Z"'
+        in: query
+        name: end_time
+        type: string
+      - default: 0
+        description: Number of events to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - default: 100
+        description: Maximum number of events to return
+        in: query
+        maximum: 1000
+        minimum: 1
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of events
+          schema:
+            $ref: '#/definitions/SessionEventListResponse'
+        "400":
+          description: Invalid session ID or parameters
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: List session events
+      tags:
+      - events
+    post:
+      consumes:
+      - application/json
+      description: Create a new event for a browser session. The session ID can be
+        provided in the URL path or in the request body.
+      parameters:
+      - description: Session ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Event data
+        in: body
+        name: event
+        required: true
+        schema:
+          $ref: '#/definitions/SessionEvent'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Event created successfully
+          schema:
+            $ref: '#/definitions/SessionEvent'
+        "400":
+          description: Invalid request data or missing session_id/event
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Create a session event
+      tags:
+      - events
+  /api/v1/sessions/{id}/metrics:
+    post:
+      consumes:
+      - application/json
+      description: Create performance metrics for a browser session. The session ID
+        can be provided in the URL path or in the request body.
+      parameters:
+      - description: Session ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Performance metrics data
+        in: body
+        name: metrics
+        required: true
+        schema:
+          $ref: '#/definitions/SessionMetrics'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Metrics created successfully
+          schema:
+            $ref: '#/definitions/SessionMetrics'
+        "400":
+          description: Invalid request data or missing session_id
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Create session metrics
+      tags:
+      - metrics
   /api/v1/workpools:
     get:
       consumes:
@@ -1217,6 +1805,10 @@ paths:
       tags:
       - pool-management
 securityDefinitions:
-  BasicAuth:
-    type: basic
+  ApiKeyAuth:
+    description: API key for authentication. Can also be provided via query parameter
+      'api_key' or Authorization header.
+    in: header
+    name: X-API-Key
+    type: apiKey
 swagger: "2.0"

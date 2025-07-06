@@ -313,21 +313,3 @@ func (s *Store) AutoMigrate() error {
 		&Pool{},
 	)
 }
-
-// MarkWorkerSessionsFailed marks all non-terminal sessions assigned to a worker as failed
-// This is used during worker shutdown to prevent orphaned sessions
-func (s *Store) MarkWorkerSessionsFailed(ctx context.Context, workerID uuid.UUID) (int64, error) {
-	result := s.db.WithContext(ctx).
-		Model(&Session{}).
-		Where("worker_id = ? AND status IN (?)", workerID, []SessionStatus{
-			StatusStarting,
-			StatusRunning,
-			StatusIdle,
-		}).
-		Updates(map[string]interface{}{
-			"status":     StatusFailed,
-			"updated_at": time.Now(),
-		})
-
-	return result.RowsAffected, result.Error
-}

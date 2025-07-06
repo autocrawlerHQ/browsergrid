@@ -3,12 +3,15 @@ import { Globe, Layers, Pickaxe, Activity } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useGetApiV1Sessions } from '@/lib/api/sessions/sessions';
 import { useGetApiV1Workpools } from '@/lib/api/workpools/workpools';
-import { useGetApiV1Workers } from '@/lib/api/workers/workers';
+import { useGetApiV1MonitoringServers } from '@/lib/api/monitoring/monitoring';
 
 export default function Overview() {
   const { data: sessions } = useGetApiV1Sessions();
   const { data: workpools } = useGetApiV1Workpools();
-  const { data: workers } = useGetApiV1Workers();
+  const { data: servers } = useGetApiV1MonitoringServers();
+
+  // Ensure servers is an array
+  const serversArray = Array.isArray(servers) ? servers : [];
 
   const stats = [
     {
@@ -26,16 +29,16 @@ export default function Overview() {
       color: 'text-green-600'
     },
     {
-      title: 'Online Workers',
-      value: workers?.workers?.filter((w: any) => !w.paused).length || 0,
-      total: workers?.total || 0,
+      title: 'Worker Servers',
+      value: serversArray.filter((s: any) => s.status === 'running' || s.status === 'active').length || 0,
+      total: serversArray.length || 0,
       icon: Pickaxe,
       color: 'text-purple-600'
     },
     {
       title: 'Total Capacity',
-      value: workers?.workers?.reduce((acc: number, w: any) => acc + (w.max_slots || 0), 0) || 0,
-      total: workers?.workers?.reduce((acc: number, w: any) => acc + (w.active || 0), 0) || 0,
+      value: serversArray.reduce((acc: number, s: any) => acc + (s.concurrency || 0), 0) || 0,
+      total: serversArray.reduce((acc: number, s: any) => acc + (s.activeWorkers?.length || 0), 0) || 0,
       icon: Activity,
       color: 'text-orange-600'
     }
