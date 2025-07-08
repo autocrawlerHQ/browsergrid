@@ -800,6 +800,134 @@ definitions:
         example: Operation successful
         type: string
     type: object
+  internal_monitoring.MetricsDataPoint:
+    properties:
+      timestamp:
+        type: string
+      value:
+        type: number
+    type: object
+  internal_monitoring.QueueMetrics:
+    properties:
+      error_rate:
+        items:
+          $ref: '#/definitions/internal_monitoring.MetricsDataPoint'
+        type: array
+      queue:
+        type: string
+      queue_size:
+        items:
+          $ref: '#/definitions/internal_monitoring.MetricsDataPoint'
+        type: array
+      tasks_failed:
+        items:
+          $ref: '#/definitions/internal_monitoring.MetricsDataPoint'
+        type: array
+      tasks_processed:
+        items:
+          $ref: '#/definitions/internal_monitoring.MetricsDataPoint'
+        type: array
+    type: object
+  internal_monitoring.QueueStatsExtended:
+    properties:
+      active:
+        type: integer
+      archived:
+        type: integer
+      error_rate:
+        type: number
+      failed:
+        type: integer
+      last_activity:
+        type: string
+      memory_usage:
+        type: string
+      pending:
+        type: integer
+      processed:
+        type: integer
+      queue:
+        type: string
+      retry:
+        type: integer
+      scheduled:
+        type: integer
+      size:
+        type: integer
+      state:
+        description: '"run", "paused"'
+        type: string
+    type: object
+  internal_monitoring.ServerInfoSnakeCase:
+    description: Asynq server info with snake_case fields
+    properties:
+      active_workers:
+        items:
+          $ref: '#/definitions/internal_monitoring.WorkerInfoSnakeCase'
+        type: array
+      concurrency:
+        example: 2
+        type: integer
+      host:
+        example: edf39662766b
+        type: string
+      id:
+        example: a8f5232a-b393-47ff-ba96-97dd3b11d43e
+        type: string
+      pid:
+        example: 1
+        type: integer
+      queues:
+        additionalProperties:
+          type: integer
+        type: object
+      started:
+        example: "2025-07-08T00:34:08.345326919Z"
+        type: string
+      status:
+        example: active
+        type: string
+      strict_priority:
+        example: false
+        type: boolean
+    type: object
+  internal_monitoring.SystemMetrics:
+    properties:
+      error_rate:
+        items:
+          $ref: '#/definitions/internal_monitoring.MetricsDataPoint'
+        type: array
+      queue_metrics:
+        additionalProperties:
+          $ref: '#/definitions/internal_monitoring.QueueMetrics'
+        type: object
+      tasks_failed:
+        items:
+          $ref: '#/definitions/internal_monitoring.MetricsDataPoint'
+        type: array
+      tasks_processed:
+        items:
+          $ref: '#/definitions/internal_monitoring.MetricsDataPoint'
+        type: array
+    type: object
+  internal_monitoring.WorkerInfoSnakeCase:
+    description: Asynq worker info with snake_case fields
+    properties:
+      deadline:
+        type: string
+      queue:
+        type: string
+      started:
+        type: string
+      task_id:
+        type: string
+      task_payload:
+        items:
+          type: integer
+        type: array
+      task_type:
+        type: string
+    type: object
   time.Duration:
     enum:
     - -9223372036854775808
@@ -882,12 +1010,10 @@ paths:
         name: event_type
         type: string
       - description: Filter events after this time (RFC3339 format)
-        example: '"2023-01-01T00:00:00Z"'
         in: query
         name: start_time
         type: string
       - description: Filter events before this time (RFC3339 format)
-        example: '"2023-01-01T23:59:59Z"'
         in: query
         name: end_time
         type: string
@@ -1022,6 +1148,46 @@ paths:
             additionalProperties: true
             type: object
       summary: Get health status
+      tags:
+      - monitoring
+  /api/v1/monitoring/metrics:
+    get:
+      consumes:
+      - application/json
+      description: Get time-series metrics for tasks processed, failed, and error
+        rate
+      parameters:
+      - default: 30m
+        description: Time range
+        enum:
+        - 5m
+        - 30m
+        - 1h
+        - 6h
+        - 1d
+        - 7d
+        in: query
+        name: range
+        type: string
+      - collectionFormat: csv
+        description: Queue names to filter
+        in: query
+        items:
+          type: string
+        name: queues
+        type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_monitoring.SystemMetrics'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_monitoring.ErrorResponse'
+      summary: Get time-series metrics
       tags:
       - monitoring
   /api/v1/monitoring/queues:
@@ -1201,6 +1367,28 @@ paths:
       summary: Unpause queue
       tags:
       - monitoring
+  /api/v1/monitoring/queues/extended:
+    get:
+      consumes:
+      - application/json
+      description: Get extended statistics for all queues including memory usage and
+        error rates
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_monitoring.QueueStatsExtended'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_monitoring.ErrorResponse'
+      summary: Get extended queue statistics
+      tags:
+      - monitoring
   /api/v1/monitoring/scheduler:
     get:
       consumes:
@@ -1234,7 +1422,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/asynq.ServerInfo'
+              $ref: '#/definitions/internal_monitoring.ServerInfoSnakeCase'
             type: array
         "500":
           description: Internal Server Error
@@ -1268,12 +1456,10 @@ paths:
         name: status
         type: string
       - description: Filter sessions created after this time (RFC3339 format)
-        example: '"2023-01-01T00:00:00Z"'
         in: query
         name: start_time
         type: string
       - description: Filter sessions created before this time (RFC3339 format)
-        example: '"2023-01-01T23:59:59Z"'
         in: query
         name: end_time
         type: string
@@ -1446,12 +1632,10 @@ paths:
         name: event_type
         type: string
       - description: Filter events after this time (RFC3339 format)
-        example: '"2023-01-01T00:00:00Z"'
         in: query
         name: start_time
         type: string
       - description: Filter events before this time (RFC3339 format)
-        example: '"2023-01-01T23:59:59Z"'
         in: query
         name: end_time
         type: string

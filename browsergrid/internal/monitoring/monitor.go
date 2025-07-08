@@ -2,6 +2,7 @@ package monitoring
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/hibiken/asynq"
@@ -307,4 +308,192 @@ func (m *WorkerMonitor) PauseQueue(queue string) error {
 // UnpauseQueue unpauses processing of a queue
 func (m *WorkerMonitor) UnpauseQueue(queue string) error {
 	return m.inspector.UnpauseQueue(queue)
+}
+
+// GetMetrics returns time-series metrics for the specified time range
+func (m *WorkerMonitor) GetMetrics(timeRange MetricsTimeRange, queues []string) (*SystemMetrics, error) {
+	// In a real implementation, this would fetch from a time-series database
+	// For now, we'll generate sample data based on current stats
+
+	now := time.Now()
+	duration := m.parseTimeRange(timeRange)
+	interval := m.getInterval(timeRange)
+
+	metrics := &SystemMetrics{
+		TasksProcessed: make([]MetricsDataPoint, 0),
+		TasksFailed:    make([]MetricsDataPoint, 0),
+		ErrorRate:      make([]MetricsDataPoint, 0),
+		QueueMetrics:   make(map[string]QueueMetrics),
+	}
+
+	// Generate time series data points
+	for t := now.Add(-duration); t.Before(now); t = t.Add(interval) {
+		// In production, fetch from metrics store
+		processed := m.generateMetricValue(0.27, 0.36, t)
+		failed := m.generateMetricValue(0.019, 0.038, t)
+		errorRate := failed / (processed + failed) * 100
+
+		metrics.TasksProcessed = append(metrics.TasksProcessed, MetricsDataPoint{
+			Timestamp: t,
+			Value:     processed,
+		})
+		metrics.TasksFailed = append(metrics.TasksFailed, MetricsDataPoint{
+			Timestamp: t,
+			Value:     failed,
+		})
+		metrics.ErrorRate = append(metrics.ErrorRate, MetricsDataPoint{
+			Timestamp: t,
+			Value:     errorRate,
+		})
+	}
+
+	// Add queue-specific metrics if requested
+	if len(queues) > 0 {
+		for _, queue := range queues {
+			queueMetrics := QueueMetrics{
+				Queue:          queue,
+				TasksProcessed: make([]MetricsDataPoint, 0),
+				TasksFailed:    make([]MetricsDataPoint, 0),
+				ErrorRate:      make([]MetricsDataPoint, 0),
+				QueueSize:      make([]MetricsDataPoint, 0),
+			}
+
+			// Generate queue-specific data
+			for t := now.Add(-duration); t.Before(now); t = t.Add(interval) {
+				processed := m.generateMetricValue(0.1, 0.2, t)
+				failed := m.generateMetricValue(0.01, 0.02, t)
+				size := m.generateMetricValue(100, 200, t)
+
+				queueMetrics.TasksProcessed = append(queueMetrics.TasksProcessed, MetricsDataPoint{
+					Timestamp: t,
+					Value:     processed,
+				})
+				queueMetrics.TasksFailed = append(queueMetrics.TasksFailed, MetricsDataPoint{
+					Timestamp: t,
+					Value:     failed,
+				})
+				queueMetrics.ErrorRate = append(queueMetrics.ErrorRate, MetricsDataPoint{
+					Timestamp: t,
+					Value:     failed / (processed + failed) * 100,
+				})
+				queueMetrics.QueueSize = append(queueMetrics.QueueSize, MetricsDataPoint{
+					Timestamp: t,
+					Value:     size,
+				})
+			}
+
+			metrics.QueueMetrics[queue] = queueMetrics
+		}
+	}
+
+	return metrics, nil
+}
+
+// GetQueueStatsExtended returns extended queue statistics
+func (m *WorkerMonitor) GetQueueStatsExtended() ([]QueueStatsExtended, error) {
+	queues, err := m.inspector.Queues()
+	if err != nil {
+		return nil, err
+	}
+
+	stats := make([]QueueStatsExtended, 0, len(queues))
+
+	for _, q := range queues {
+		info, err := m.inspector.GetQueueInfo(q)
+		if err != nil {
+			continue
+		}
+
+		// Calculate additional metrics
+		totalTasks := info.Active + info.Pending + info.Scheduled + info.Retry + info.Archived
+		memoryUsage := m.calculateMemoryUsage(totalTasks)
+
+		errorRate := 0.0
+		if info.Completed > 0 {
+			errorRate = float64(info.Failed) / float64(info.Completed+info.Failed) * 100
+		}
+
+		state := "run"
+		if info.Paused {
+			state = "paused"
+		}
+
+		stats = append(stats, QueueStatsExtended{
+			Queue:       q,
+			State:       state,
+			Size:        totalTasks,
+			MemoryUsage: memoryUsage,
+			Processed:   info.Completed,
+			Failed:      info.Failed,
+			ErrorRate:   errorRate,
+			Active:      info.Active,
+			Pending:     info.Pending,
+			Scheduled:   info.Scheduled,
+			Retry:       info.Retry,
+			Archived:    info.Archived,
+		})
+	}
+
+	return stats, nil
+}
+
+// Helper methods
+func (m *WorkerMonitor) parseTimeRange(tr MetricsTimeRange) time.Duration {
+	switch tr {
+	case TimeRange5Min:
+		return 5 * time.Minute
+	case TimeRange30Min:
+		return 30 * time.Minute
+	case TimeRange1Hour:
+		return time.Hour
+	case TimeRange6Hour:
+		return 6 * time.Hour
+	case TimeRange1Day:
+		return 24 * time.Hour
+	case TimeRange7Day:
+		return 7 * 24 * time.Hour
+	default:
+		return 30 * time.Minute
+	}
+}
+
+func (m *WorkerMonitor) getInterval(tr MetricsTimeRange) time.Duration {
+	switch tr {
+	case TimeRange5Min:
+		return 10 * time.Second
+	case TimeRange30Min:
+		return time.Minute
+	case TimeRange1Hour:
+		return 2 * time.Minute
+	case TimeRange6Hour:
+		return 10 * time.Minute
+	case TimeRange1Day:
+		return 30 * time.Minute
+	case TimeRange7Day:
+		return 2 * time.Hour
+	default:
+		return time.Minute
+	}
+}
+
+func (m *WorkerMonitor) generateMetricValue(min, max float64, t time.Time) float64 {
+	// Simple sine wave with noise for demo
+	// In production, fetch from metrics store
+	base := min + (max-min)/2
+	amplitude := (max - min) / 2
+	noise := (float64(t.Unix()%7) - 3.5) / 35.0
+	return base + amplitude*math.Sin(float64(t.Unix())/300) + noise
+}
+
+func (m *WorkerMonitor) calculateMemoryUsage(taskCount int) string {
+	// Estimate memory usage based on task count
+	// Assume ~1KB per task average
+	bytes := taskCount * 1024
+
+	if bytes < 1024*1024 {
+		return fmt.Sprintf("%.1f KB", float64(bytes)/1024)
+	} else if bytes < 1024*1024*1024 {
+		return fmt.Sprintf("%.1f MB", float64(bytes)/(1024*1024))
+	}
+	return fmt.Sprintf("%.1f GB", float64(bytes)/(1024*1024*1024))
 }

@@ -256,8 +256,8 @@ func deleteSession(store *Store, deps Dependencies) gin.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param status query string false "Filter by session status" Enums(pending, starting, available, claimed, running, idle, completed, failed, expired, crashed, timed_out, terminated)
-// @Param start_time query string false "Filter sessions created after this time (RFC3339 format)" example("2023-01-01T00:00:00Z")
-// @Param end_time query string false "Filter sessions created before this time (RFC3339 format)" example("2023-01-01T23:59:59Z")
+// @Param start_time query string false "Filter sessions created after this time (RFC3339 format)"
+// @Param end_time query string false "Filter sessions created before this time (RFC3339 format)"
 // @Param offset query integer false "Number of sessions to skip" default(0) minimum(0)
 // @Param limit query integer false "Maximum number of sessions to return" default(100) minimum(1) maximum(1000)
 // @Success 200 {object} SessionListResponse "List of sessions"
@@ -385,8 +385,8 @@ func createEvent(store *Store) gin.HandlerFunc {
 // @Param id path string true "Session ID (UUID)"
 // @Param session_id query string false "Session ID (UUID) - alternative to path parameter"
 // @Param event_type query string false "Filter by event type" Enums(session_created, resource_allocated, session_starting, container_started, browser_started, session_available, session_claimed, session_assigned, session_ready, session_active, session_idle, heartbeat, pool_added, pool_removed, pool_drained, session_completed, session_expired, session_timed_out, session_terminated, startup_failed, browser_crashed, container_crashed, resource_exhausted, network_error, status_changed, config_updated, health_check)
-// @Param start_time query string false "Filter events after this time (RFC3339 format)" example("2023-01-01T00:00:00Z")
-// @Param end_time query string false "Filter events before this time (RFC3339 format)" example("2023-01-01T23:59:59Z")
+// @Param start_time query string false "Filter events after this time (RFC3339 format)"
+// @Param end_time query string false "Filter events before this time (RFC3339 format)"
 // @Param offset query integer false "Number of events to skip" default(0) minimum(0)
 // @Param limit query integer false "Maximum number of events to return" default(100) minimum(1) maximum(1000)
 // @Success 200 {object} SessionEventListResponse "List of events"

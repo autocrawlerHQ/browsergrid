@@ -3,6 +3,7 @@ package monitoring
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hibiken/asynq"
@@ -22,6 +23,10 @@ func RegisterRoutes(rg *gin.RouterGroup, redisOpt asynq.RedisClientOpt) {
 	rg.GET("/monitoring/queues/:name/tasks", getQueueTasks(monitor))
 	rg.GET("/monitoring/health", getHealth(monitor))
 	rg.GET("/monitoring/scheduler", getSchedulerEntries(monitor))
+
+	// Metrics endpoints
+	rg.GET("/monitoring/metrics", getMetrics(monitor))
+	rg.GET("/monitoring/queues/extended", getQueuesExtended(monitor))
 
 	// Management endpoints
 	rg.POST("/monitoring/queues/:name/pause", pauseQueue(monitor))
@@ -50,13 +55,44 @@ func getMonitoringInfo(monitor *WorkerMonitor) gin.HandlerFunc {
 	}
 }
 
+// ServerInfoSnakeCase is a snake_case version of asynq.ServerInfo for API responses
+// @Description Asynq server info with snake_case fields
+// @name ServerInfoSnakeCase
+// @Produce json
+// @Success 200 {array} ServerInfoSnakeCase
+type ServerInfoSnakeCase struct {
+	ID             string                `json:"id" example:"a8f5232a-b393-47ff-ba96-97dd3b11d43e"`
+	Host           string                `json:"host" example:"edf39662766b"`
+	PID            int                   `json:"pid" example:"1"`
+	Concurrency    int                   `json:"concurrency" example:"2"`
+	Queues         map[string]int        `json:"queues"`
+	StrictPriority bool                  `json:"strict_priority" example:"false"`
+	Started        string                `json:"started" example:"2025-07-08T00:34:08.345326919Z"`
+	Status         string                `json:"status" example:"active"`
+	ActiveWorkers  []WorkerInfoSnakeCase `json:"active_workers"`
+}
+
+// WorkerInfoSnakeCase is a snake_case version of asynq.WorkerInfo
+// @Description Asynq worker info with snake_case fields
+// @name WorkerInfoSnakeCase
+// @Produce json
+// @Success 200 {array} WorkerInfoSnakeCase
+type WorkerInfoSnakeCase struct {
+	TaskID      string `json:"task_id"`
+	TaskType    string `json:"task_type"`
+	Queue       string `json:"queue"`
+	Started     string `json:"started"`
+	Deadline    string `json:"deadline"`
+	TaskPayload []byte `json:"task_payload"`
+}
+
 // getServers returns information about Asynq servers
 // @Summary Get server information
 // @Description Get information about all Asynq servers (workers)
 // @Tags monitoring
 // @Accept json
 // @Produce json
-// @Success 200 {array} asynq.ServerInfo
+// @Success 200 {array} ServerInfoSnakeCase
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/monitoring/servers [get]
 func getServers(monitor *WorkerMonitor) gin.HandlerFunc {
@@ -66,10 +102,33 @@ func getServers(monitor *WorkerMonitor) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{
-			"servers": servers,
-			"total":   len(servers),
-		})
+		// Map asynq.ServerInfo to ServerInfoSnakeCase
+		var result []ServerInfoSnakeCase
+		for _, s := range servers {
+			var workers []WorkerInfoSnakeCase
+			for _, w := range s.ActiveWorkers {
+				workers = append(workers, WorkerInfoSnakeCase{
+					TaskID:      w.TaskID,
+					TaskType:    w.TaskType,
+					Queue:       w.Queue,
+					Started:     w.Started.Format(time.RFC3339),
+					Deadline:    w.Deadline.Format(time.RFC3339),
+					TaskPayload: w.TaskPayload,
+				})
+			}
+			result = append(result, ServerInfoSnakeCase{
+				ID:             s.ID,
+				Host:           s.Host,
+				PID:            s.PID,
+				Concurrency:    s.Concurrency,
+				Queues:         s.Queues,
+				StrictPriority: s.StrictPriority,
+				Started:        s.Started.Format(time.RFC3339),
+				Status:         s.Status,
+				ActiveWorkers:  workers,
+			})
+		}
+		c.JSON(http.StatusOK, result)
 	}
 }
 
@@ -313,6 +372,53 @@ func deleteRetryTasks(monitor *WorkerMonitor) gin.HandlerFunc {
 			"message": fmt.Sprintf("Deleted %d retry tasks from queue %s", deleted, queueName),
 			"deleted": deleted,
 		})
+	}
+}
+
+// getMetrics returns time-series metrics
+// @Summary Get time-series metrics
+// @Description Get time-series metrics for tasks processed, failed, and error rate
+// @Tags monitoring
+// @Accept json
+// @Produce json
+// @Param range query string false "Time range" Enums(5m,30m,1h,6h,1d,7d) default(30m)
+// @Param queues query []string false "Queue names to filter"
+// @Success 200 {object} SystemMetrics
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/monitoring/metrics [get]
+func getMetrics(monitor *WorkerMonitor) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		timeRange := MetricsTimeRange(c.DefaultQuery("range", "30m"))
+		queues := c.QueryArray("queues")
+
+		metrics, err := monitor.GetMetrics(timeRange, queues)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, metrics)
+	}
+}
+
+// getQueuesExtended returns extended queue statistics
+// @Summary Get extended queue statistics
+// @Description Get extended statistics for all queues including memory usage and error rates
+// @Tags monitoring
+// @Accept json
+// @Produce json
+// @Success 200 {array} QueueStatsExtended
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/monitoring/queues/extended [get]
+func getQueuesExtended(monitor *WorkerMonitor) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		stats, err := monitor.GetQueueStatsExtended()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, stats)
 	}
 }
 

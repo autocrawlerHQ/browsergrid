@@ -27,14 +27,17 @@ import type {
 import type {
   AsynqQueueInfo,
   AsynqSchedulerEntry,
-  AsynqServerInfo,
   DeleteApiV1MonitoringQueuesNameArchived200,
   DeleteApiV1MonitoringQueuesNameRetry200,
   GetApiV1MonitoringHealth200,
   GetApiV1MonitoringHealth503,
+  GetApiV1MonitoringMetricsParams,
   GetApiV1MonitoringQueues200,
   InternalMonitoringErrorResponse,
   InternalMonitoringMessageResponse,
+  InternalMonitoringQueueStatsExtended,
+  InternalMonitoringServerInfoSnakeCase,
+  InternalMonitoringSystemMetrics,
   MonitoringInfo,
   TaskInfo
 } from '.././model';
@@ -221,6 +224,95 @@ export function useGetApiV1MonitoringHealth<TData = Awaited<ReturnType<typeof ge
 
 
 /**
+ * Get time-series metrics for tasks processed, failed, and error rate
+ * @summary Get time-series metrics
+ */
+export const getApiV1MonitoringMetrics = (
+    params?: GetApiV1MonitoringMetricsParams,
+ signal?: AbortSignal
+) => {
+      
+      
+      return customInstance<InternalMonitoringSystemMetrics>(
+      {url: `/api/v1/monitoring/metrics`, method: 'GET',
+        params, signal
+    },
+      );
+    }
+  
+
+export const getGetApiV1MonitoringMetricsQueryKey = (params?: GetApiV1MonitoringMetricsParams,) => {
+    return [`/api/v1/monitoring/metrics`, ...(params ? [params]: [])] as const;
+    }
+
+    
+export const getGetApiV1MonitoringMetricsQueryOptions = <TData = Awaited<ReturnType<typeof getApiV1MonitoringMetrics>>, TError = InternalMonitoringErrorResponse>(params?: GetApiV1MonitoringMetricsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1MonitoringMetrics>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetApiV1MonitoringMetricsQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getApiV1MonitoringMetrics>>> = ({ signal }) => getApiV1MonitoringMetrics(params, signal);
+
+      
+
+      
+
+   return  { queryKey, queryFn,   staleTime: 10000, refetchOnWindowFocus: false,  ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getApiV1MonitoringMetrics>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetApiV1MonitoringMetricsQueryResult = NonNullable<Awaited<ReturnType<typeof getApiV1MonitoringMetrics>>>
+export type GetApiV1MonitoringMetricsQueryError = InternalMonitoringErrorResponse
+
+
+export function useGetApiV1MonitoringMetrics<TData = Awaited<ReturnType<typeof getApiV1MonitoringMetrics>>, TError = InternalMonitoringErrorResponse>(
+ params: undefined |  GetApiV1MonitoringMetricsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1MonitoringMetrics>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getApiV1MonitoringMetrics>>,
+          TError,
+          Awaited<ReturnType<typeof getApiV1MonitoringMetrics>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetApiV1MonitoringMetrics<TData = Awaited<ReturnType<typeof getApiV1MonitoringMetrics>>, TError = InternalMonitoringErrorResponse>(
+ params?: GetApiV1MonitoringMetricsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1MonitoringMetrics>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getApiV1MonitoringMetrics>>,
+          TError,
+          Awaited<ReturnType<typeof getApiV1MonitoringMetrics>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetApiV1MonitoringMetrics<TData = Awaited<ReturnType<typeof getApiV1MonitoringMetrics>>, TError = InternalMonitoringErrorResponse>(
+ params?: GetApiV1MonitoringMetricsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1MonitoringMetrics>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get time-series metrics
+ */
+
+export function useGetApiV1MonitoringMetrics<TData = Awaited<ReturnType<typeof getApiV1MonitoringMetrics>>, TError = InternalMonitoringErrorResponse>(
+ params?: GetApiV1MonitoringMetricsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1MonitoringMetrics>>, TError, TData>>, }
+ , queryClient?: QueryClient 
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetApiV1MonitoringMetricsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions , queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+/**
  * Get statistics for all queues
  * @summary Get queue statistics
  */
@@ -298,6 +390,94 @@ export function useGetApiV1MonitoringQueues<TData = Awaited<ReturnType<typeof ge
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetApiV1MonitoringQueuesQueryOptions(options)
+
+  const query = useQuery(queryOptions , queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+/**
+ * Get extended statistics for all queues including memory usage and error rates
+ * @summary Get extended queue statistics
+ */
+export const getApiV1MonitoringQueuesExtended = (
+    
+ signal?: AbortSignal
+) => {
+      
+      
+      return customInstance<InternalMonitoringQueueStatsExtended[]>(
+      {url: `/api/v1/monitoring/queues/extended`, method: 'GET', signal
+    },
+      );
+    }
+  
+
+export const getGetApiV1MonitoringQueuesExtendedQueryKey = () => {
+    return [`/api/v1/monitoring/queues/extended`] as const;
+    }
+
+    
+export const getGetApiV1MonitoringQueuesExtendedQueryOptions = <TData = Awaited<ReturnType<typeof getApiV1MonitoringQueuesExtended>>, TError = InternalMonitoringErrorResponse>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1MonitoringQueuesExtended>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetApiV1MonitoringQueuesExtendedQueryKey();
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getApiV1MonitoringQueuesExtended>>> = ({ signal }) => getApiV1MonitoringQueuesExtended(signal);
+
+      
+
+      
+
+   return  { queryKey, queryFn,   staleTime: 10000, refetchOnWindowFocus: false,  ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getApiV1MonitoringQueuesExtended>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetApiV1MonitoringQueuesExtendedQueryResult = NonNullable<Awaited<ReturnType<typeof getApiV1MonitoringQueuesExtended>>>
+export type GetApiV1MonitoringQueuesExtendedQueryError = InternalMonitoringErrorResponse
+
+
+export function useGetApiV1MonitoringQueuesExtended<TData = Awaited<ReturnType<typeof getApiV1MonitoringQueuesExtended>>, TError = InternalMonitoringErrorResponse>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1MonitoringQueuesExtended>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getApiV1MonitoringQueuesExtended>>,
+          TError,
+          Awaited<ReturnType<typeof getApiV1MonitoringQueuesExtended>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetApiV1MonitoringQueuesExtended<TData = Awaited<ReturnType<typeof getApiV1MonitoringQueuesExtended>>, TError = InternalMonitoringErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1MonitoringQueuesExtended>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getApiV1MonitoringQueuesExtended>>,
+          TError,
+          Awaited<ReturnType<typeof getApiV1MonitoringQueuesExtended>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetApiV1MonitoringQueuesExtended<TData = Awaited<ReturnType<typeof getApiV1MonitoringQueuesExtended>>, TError = InternalMonitoringErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1MonitoringQueuesExtended>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get extended queue statistics
+ */
+
+export function useGetApiV1MonitoringQueuesExtended<TData = Awaited<ReturnType<typeof getApiV1MonitoringQueuesExtended>>, TError = InternalMonitoringErrorResponse>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getApiV1MonitoringQueuesExtended>>, TError, TData>>, }
+ , queryClient?: QueryClient 
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetApiV1MonitoringQueuesExtendedQueryOptions(options)
 
   const query = useQuery(queryOptions , queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -832,7 +1012,7 @@ export const getApiV1MonitoringServers = (
 ) => {
       
       
-      return customInstance<AsynqServerInfo[]>(
+      return customInstance<InternalMonitoringServerInfoSnakeCase[]>(
       {url: `/api/v1/monitoring/servers`, method: 'GET', signal
     },
       );

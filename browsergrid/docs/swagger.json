@@ -75,14 +75,12 @@
                     },
                     {
                         "type": "string",
-                        "example": "\"2023-01-01T00:00:00Z\"",
                         "description": "Filter events after this time (RFC3339 format)",
                         "name": "start_time",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "example": "\"2023-01-01T23:59:59Z\"",
                         "description": "Filter events before this time (RFC3339 format)",
                         "name": "end_time",
                         "in": "query"
@@ -277,6 +275,62 @@
                 }
             }
         },
+        "/api/v1/monitoring/metrics": {
+            "get": {
+                "description": "Get time-series metrics for tasks processed, failed, and error rate",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "monitoring"
+                ],
+                "summary": "Get time-series metrics",
+                "parameters": [
+                    {
+                        "enum": [
+                            "5m",
+                            "30m",
+                            "1h",
+                            "6h",
+                            "1d",
+                            "7d"
+                        ],
+                        "type": "string",
+                        "default": "30m",
+                        "description": "Time range",
+                        "name": "range",
+                        "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "Queue names to filter",
+                        "name": "queues",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_monitoring.SystemMetrics"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_monitoring.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/monitoring/queues": {
             "get": {
                 "description": "Get statistics for all queues",
@@ -297,6 +351,38 @@
                             "type": "object",
                             "additionalProperties": {
                                 "$ref": "#/definitions/asynq.QueueInfo"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_monitoring.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/monitoring/queues/extended": {
+            "get": {
+                "description": "Get extended statistics for all queues including memory usage and error rates",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "monitoring"
+                ],
+                "summary": "Get extended queue statistics",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_monitoring.QueueStatsExtended"
                             }
                         }
                     },
@@ -596,7 +682,7 @@
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/asynq.ServerInfo"
+                                "$ref": "#/definitions/internal_monitoring.ServerInfoSnakeCase"
                             }
                         }
                     },
@@ -645,14 +731,12 @@
                     },
                     {
                         "type": "string",
-                        "example": "\"2023-01-01T00:00:00Z\"",
                         "description": "Filter sessions created after this time (RFC3339 format)",
                         "name": "start_time",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "example": "\"2023-01-01T23:59:59Z\"",
                         "description": "Filter sessions created before this time (RFC3339 format)",
                         "name": "end_time",
                         "in": "query"
@@ -891,14 +975,12 @@
                     },
                     {
                         "type": "string",
-                        "example": "\"2023-01-01T00:00:00Z\"",
                         "description": "Filter events after this time (RFC3339 format)",
                         "name": "start_time",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "example": "\"2023-01-01T23:59:59Z\"",
                         "description": "Filter events before this time (RFC3339 format)",
                         "name": "end_time",
                         "in": "query"
@@ -2466,6 +2548,196 @@
                 "message": {
                     "type": "string",
                     "example": "Operation successful"
+                }
+            }
+        },
+        "internal_monitoring.MetricsDataPoint": {
+            "type": "object",
+            "properties": {
+                "timestamp": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "number"
+                }
+            }
+        },
+        "internal_monitoring.QueueMetrics": {
+            "type": "object",
+            "properties": {
+                "error_rate": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_monitoring.MetricsDataPoint"
+                    }
+                },
+                "queue": {
+                    "type": "string"
+                },
+                "queue_size": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_monitoring.MetricsDataPoint"
+                    }
+                },
+                "tasks_failed": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_monitoring.MetricsDataPoint"
+                    }
+                },
+                "tasks_processed": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_monitoring.MetricsDataPoint"
+                    }
+                }
+            }
+        },
+        "internal_monitoring.QueueStatsExtended": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "integer"
+                },
+                "archived": {
+                    "type": "integer"
+                },
+                "error_rate": {
+                    "type": "number"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "last_activity": {
+                    "type": "string"
+                },
+                "memory_usage": {
+                    "type": "string"
+                },
+                "pending": {
+                    "type": "integer"
+                },
+                "processed": {
+                    "type": "integer"
+                },
+                "queue": {
+                    "type": "string"
+                },
+                "retry": {
+                    "type": "integer"
+                },
+                "scheduled": {
+                    "type": "integer"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "state": {
+                    "description": "\"run\", \"paused\"",
+                    "type": "string"
+                }
+            }
+        },
+        "internal_monitoring.ServerInfoSnakeCase": {
+            "description": "Asynq server info with snake_case fields",
+            "type": "object",
+            "properties": {
+                "active_workers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_monitoring.WorkerInfoSnakeCase"
+                    }
+                },
+                "concurrency": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "host": {
+                    "type": "string",
+                    "example": "edf39662766b"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "a8f5232a-b393-47ff-ba96-97dd3b11d43e"
+                },
+                "pid": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "queues": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "started": {
+                    "type": "string",
+                    "example": "2025-07-08T00:34:08.345326919Z"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "active"
+                },
+                "strict_priority": {
+                    "type": "boolean",
+                    "example": false
+                }
+            }
+        },
+        "internal_monitoring.SystemMetrics": {
+            "type": "object",
+            "properties": {
+                "error_rate": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_monitoring.MetricsDataPoint"
+                    }
+                },
+                "queue_metrics": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/internal_monitoring.QueueMetrics"
+                    }
+                },
+                "tasks_failed": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_monitoring.MetricsDataPoint"
+                    }
+                },
+                "tasks_processed": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_monitoring.MetricsDataPoint"
+                    }
+                }
+            }
+        },
+        "internal_monitoring.WorkerInfoSnakeCase": {
+            "description": "Asynq worker info with snake_case fields",
+            "type": "object",
+            "properties": {
+                "deadline": {
+                    "type": "string"
+                },
+                "queue": {
+                    "type": "string"
+                },
+                "started": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "string"
+                },
+                "task_payload": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "task_type": {
+                    "type": "string"
                 }
             }
         },
