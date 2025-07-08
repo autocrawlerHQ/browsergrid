@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"os/signal"
@@ -130,9 +129,6 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// Start monitoring endpoints
-	go startMonitoring(redisOpt)
-
 	go func() {
 		log.Printf("✓ API listening on :%d", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -152,36 +148,4 @@ func main() {
 	}
 
 	log.Println("✓ Server exited cleanly")
-}
-
-// startMonitoring starts a simple monitoring endpoint for queue stats
-func startMonitoring(redisOpt asynq.RedisClientOpt) {
-	inspector := asynq.NewInspector(redisOpt)
-
-	http.HandleFunc("/metrics/queues", func(w http.ResponseWriter, r *http.Request) {
-		queues, err := inspector.Queues()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "text/plain")
-		for _, q := range queues {
-			info, err := inspector.GetQueueInfo(q)
-			if err != nil {
-				continue
-			}
-			fmt.Fprintf(w, "queue_%s_pending %d\n", q, info.Pending)
-			fmt.Fprintf(w, "queue_%s_active %d\n", q, info.Active)
-			fmt.Fprintf(w, "queue_%s_scheduled %d\n", q, info.Scheduled)
-			fmt.Fprintf(w, "queue_%s_retry %d\n", q, info.Retry)
-			fmt.Fprintf(w, "queue_%s_archived %d\n", q, info.Archived)
-			fmt.Fprintf(w, "queue_%s_completed %d\n", q, info.Completed)
-		}
-	})
-
-	log.Println("✓ Monitoring endpoint available at :9090/metrics/queues")
-	if err := http.ListenAndServe(":9090", nil); err != nil {
-		log.Printf("Monitoring server error: %v", err)
-	}
 }

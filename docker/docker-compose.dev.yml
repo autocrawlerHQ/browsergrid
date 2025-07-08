@@ -52,5 +52,43 @@ services:
       - BROWSERGRID_WORKER_CONCURRENCY=${BROWSERGRID_WORKER_CONCURRENCY:-2}
       - BROWSERGRID_WORKER_POLL_INTERVAL=${BROWSERGRID_WORKER_POLL_INTERVAL:-10s}
 
+  prometheus:
+    container_name: browsergrid-prometheus
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - browsergrid_server
+    restart: unless-stopped
+
+  asynqmon:
+    container_name: browsergrid-asynqmon
+    image: hibiken/asynqmon:latest
+    environment:
+      - REDIS_ADDR=redis:6379
+      - REDIS_DB=0
+      - PORT=4444
+      - ENABLE_METRICS_EXPORTER=true
+      - PROMETHEUS_ADDR=http://prometheus:9090
+    depends_on:
+      redis:
+        condition: service_started
+      prometheus:
+        condition: service_started
+    networks:
+      - browsergrid_server
+    restart: unless-stopped
+
 volumes:
-  go_mod_cache: 
+  go_mod_cache:
+  prometheus_data: 

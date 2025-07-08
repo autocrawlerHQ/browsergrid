@@ -7,7 +7,7 @@
  */
 
 /**
- * Standard error response format
+ * Error response with details
  */
 export interface ErrorResponse {
   error?: string;

@@ -8,7 +8,6 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 
 	"github.com/autocrawlerHQ/browsergrid/internal/db"
-	"github.com/autocrawlerHQ/browsergrid/internal/monitoring"
 	"github.com/autocrawlerHQ/browsergrid/internal/poolmgr"
 	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
 	"github.com/autocrawlerHQ/browsergrid/internal/workpool"
@@ -71,9 +70,6 @@ func New(database *db.DB, reconciler *poolmgr.Reconciler, taskClient *asynq.Clie
 
 		// Pool management routes
 		poolmgr.RegisterRoutes(v1, reconciler)
-
-		// Monitoring routes
-		monitoring.RegisterRoutes(v1, redisOpt)
 
 	}
 

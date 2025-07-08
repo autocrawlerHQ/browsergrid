@@ -11,7 +11,7 @@ import {
   LayoutGrid, 
   Globe, 
   Layers, 
-  Pickaxe, 
+  ListTodo, 
   Webhook 
 } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
@@ -22,7 +22,7 @@ const tabItems = [
   { id: 'overview', label: 'Overview', icon: LayoutGrid, path: '/' },
   { id: 'sessions', label: 'Browser Sessions', icon: Globe, path: '/sessions' },
   { id: 'workpools', label: 'Work Pools', icon: Layers, path: '/workpools' },
-  { id: 'workers', label: 'Workers', icon: Pickaxe, path: '/workers' },
+  { id: 'queue', label: 'Queue', icon: ListTodo, path: '/queue' },
   { id: 'webhooks', label: 'Webhooks', icon: Webhook, path: '/webhooks' }
 ]
 
@@ -81,20 +81,38 @@ export default function RootLayout() {
               {/* Navigation Tabs */}
               <div className="mb-6">
                 <div className="flex space-x-6">
-                  {tabItems.map((tab) => (
-                    <Link
-                      key={tab.id}
-                      to={tab.path}
-                      className={`flex items-center gap-2 border-b-2 px-1 py-3 text-sm font-medium transition-all ${
-                        location.pathname === tab.path
-                          ? "border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400" 
-                          : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-300"
-                      }`}
-                    >
-                      <tab.icon className="h-4 w-4" />
-                      {tab.label}
-                    </Link>
-                  ))}
+                  {tabItems.map((tab) => {
+                    // Special handling for queue (external service)
+                    if (tab.id === 'queue') {
+                      return (
+                        <a
+                          key={tab.id}
+                          href="http://localhost:4444"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 border-b-2 px-1 py-3 text-sm font-medium transition-all border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-300"
+                        >
+                          <tab.icon className="h-4 w-4" />
+                          {tab.label}
+                        </a>
+                      )
+                    }
+                    
+                    return (
+                      <Link
+                        key={tab.id}
+                        to={tab.path}
+                        className={`flex items-center gap-2 border-b-2 px-1 py-3 text-sm font-medium transition-all ${
+                          location.pathname === tab.path
+                            ? "border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400" 
+                            : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-300"
+                        }`}
+                      >
+                        <tab.icon className="h-4 w-4" />
+                        {tab.label}
+                      </Link>
+                    )
+                  })}
                 </div>
               </div>
               

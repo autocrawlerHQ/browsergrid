@@ -91,9 +91,49 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock  # For Docker provider
     restart: unless-stopped
 
+  prometheus:
+    container_name: browsergrid-prometheus
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - browsergrid_server
+    restart: unless-stopped
+
+  asynqmon:
+    container_name: browsergrid-asynqmon
+    image: hibiken/asynqmon:latest
+    environment:
+      - REDIS_ADDR=redis:6379
+      - REDIS_DB=0
+      - PORT=4444
+      - ENABLE_METRICS_EXPORTER=true
+      - PROMETHEUS_ADDR=http://prometheus:9090
+    depends_on:
+      redis:
+        condition: service_started
+      prometheus:
+        condition: service_started
+    ports:
+      - "4444:4444"
+    networks:
+      - browsergrid_server
+    restart: unless-stopped
+
 networks:
   browsergrid_server:
     name: browsergrid_server
 
 volumes:
-  postgres_data: 
+  postgres_data:
+  prometheus_data: 
