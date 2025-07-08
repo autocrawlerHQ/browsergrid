@@ -6,6 +6,7 @@ import Overview from '@/pages/Overview'
 import Sessions from '@/pages/Sessions'
 import SessionDetails from '@/pages/SessionDetails'
 import WorkPools from '@/pages/WorkPools'
+import Queue from '@/pages/Queue'
 import Webhooks from '@/pages/Webhooks'
 import NotFound from '@/pages/NotFound'
 
@@ -19,6 +20,7 @@ const router = createBrowserRouter([
       { path: 'sessions', element: <Sessions /> },
       { path: 'sessions/:id', element: <SessionDetails /> },
       { path: 'workpools', element: <WorkPools /> },
+      { path: 'queue', element: <Queue /> },
       { path: 'webhooks', element: <Webhooks /> },
       { path: '*', element: <NotFound /> },
     ],

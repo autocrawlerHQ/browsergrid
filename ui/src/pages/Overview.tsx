@@ -1,14 +1,31 @@
 import React from 'react';
-import { Globe, Layers, Pickaxe, Activity } from 'lucide-react';
+import { Globe, Layers, Activity } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useGetApiV1Sessions } from '@/lib/api/sessions/sessions';
 import { useGetApiV1Workpools } from '@/lib/api/workpools/workpools';
+import { useQuery } from '@tanstack/react-query';
 
 export default function Overview() {
   const { data: sessions } = useGetApiV1Sessions();
   const { data: workpools } = useGetApiV1Workpools();
+  
+  // Fetch queue data from Asynqmon
+  const { data: queuesData } = useQuery({
+    queryKey: ['overview-queues'],
+    queryFn: async () => {
+      try {
+        const response = await fetch('http://localhost:4444/api/queues');
+        if (!response.ok) return null;
+        return response.json();
+      } catch {
+        return null;
+      }
+    },
+    refetchInterval: 5000,
+  });
 
-  // Ensure servers is an array
+  const totalTasks = queuesData?.queues?.reduce((acc: number, q: any) => acc + q.size, 0) || 0;
+  const totalProcessed = queuesData?.queues?.reduce((acc: number, q: any) => acc + q.processed, 0) || 0;
 
   const stats = [
     {
@@ -24,6 +41,14 @@ export default function Overview() {
       total: workpools?.total || 0,
       icon: Layers,
       color: 'text-green-600'
+    },
+    {
+      title: 'Queued Tasks',
+      value: totalTasks,
+      total: totalProcessed,
+      icon: Activity,
+      color: 'text-purple-600',
+      subtitle: 'processed total'
     },
   ];
 
@@ -46,7 +71,7 @@ export default function Overview() {
             <CardContent>
               <div className="text-2xl font-bold">{stat.value}</div>
               <p className="text-xs text-muted-foreground">
-                of {stat.total} total
+                {stat.subtitle ? stat.subtitle : `of ${stat.total} total`}
               </p>
             </CardContent>
           </Card>
@@ -54,4 +79,4 @@ export default function Overview() {
       </div>
     </div>
   );
-} 
+}

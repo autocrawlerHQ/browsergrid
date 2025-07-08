@@ -1067,12 +1067,12 @@ const docTemplate = `{
             ]
         },
         "ErrorResponse": {
-            "description": "Error response with details",
+            "description": "Standard error response format",
             "type": "object",
             "properties": {
                 "error": {
                     "type": "string",
-                    "example": "Validation failed"
+                    "example": "Invalid session ID"
                 }
             }
         },

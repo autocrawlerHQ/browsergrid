@@ -31,10 +31,10 @@ definitions:
     - VerCanary
     - VerDev
   ErrorResponse:
-    description: Error response with details
+    description: Standard error response format
     properties:
       error:
-        example: Validation failed
+        example: Invalid session ID
         type: string
     type: object
   MessageResponse:
