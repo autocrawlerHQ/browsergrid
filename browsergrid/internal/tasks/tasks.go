@@ -8,7 +8,6 @@ import (
 	"github.com/hibiken/asynq"
 )
 
-// Task type names
 const (
 	TypeSessionStart       = "session:start"
 	TypeSessionStop        = "session:stop"
@@ -19,11 +18,10 @@ const (
 	TypeCleanupOrphaned    = "cleanup:orphaned"
 )
 
-// SessionStartPayload is the payload for session start tasks
 type SessionStartPayload struct {
 	SessionID          uuid.UUID `json:"session_id"`
 	WorkPoolID         uuid.UUID `json:"work_pool_id"`
-	MaxSessionDuration int       `json:"max_session_duration"` // seconds
+	MaxSessionDuration int       `json:"max_session_duration"`
 	RedisAddr          string    `json:"redis_addr"`
 	QueueName          string    `json:"queue_name"`
 }
@@ -36,7 +34,6 @@ func (p *SessionStartPayload) Unmarshal(data []byte) error {
 	return json.Unmarshal(data, p)
 }
 
-// NewSessionStartTask creates a new session start task
 func NewSessionStartTask(payload SessionStartPayload) (*asynq.Task, error) {
 	data, err := payload.Marshal()
 	if err != nil {
@@ -45,10 +42,9 @@ func NewSessionStartTask(payload SessionStartPayload) (*asynq.Task, error) {
 	return asynq.NewTask(TypeSessionStart, data), nil
 }
 
-// SessionStopPayload is the payload for session stop tasks
 type SessionStopPayload struct {
 	SessionID uuid.UUID `json:"session_id"`
-	Reason    string    `json:"reason"` // "completed", "timeout", "failed", "user_requested"
+	Reason    string    `json:"reason"`
 }
 
 func (p *SessionStopPayload) Marshal() ([]byte, error) {
@@ -59,7 +55,6 @@ func (p *SessionStopPayload) Unmarshal(data []byte) error {
 	return json.Unmarshal(data, p)
 }
 
-// NewSessionStopTask creates a new session stop task
 func NewSessionStopTask(payload SessionStopPayload) (*asynq.Task, error) {
 	data, err := payload.Marshal()
 	if err != nil {
@@ -68,7 +63,6 @@ func NewSessionStopTask(payload SessionStopPayload) (*asynq.Task, error) {
 	return asynq.NewTask(TypeSessionStop, data), nil
 }
 
-// SessionHealthCheckPayload is the payload for health check tasks
 type SessionHealthCheckPayload struct {
 	SessionID uuid.UUID `json:"session_id"`
 	RedisAddr string    `json:"redis_addr"`
@@ -82,7 +76,6 @@ func (p *SessionHealthCheckPayload) Unmarshal(data []byte) error {
 	return json.Unmarshal(data, p)
 }
 
-// NewSessionHealthCheckTask creates a new health check task
 func NewSessionHealthCheckTask(payload SessionHealthCheckPayload) (*asynq.Task, error) {
 	data, err := payload.Marshal()
 	if err != nil {
@@ -91,7 +84,6 @@ func NewSessionHealthCheckTask(payload SessionHealthCheckPayload) (*asynq.Task, 
 	return asynq.NewTask(TypeSessionHealthCheck, data), nil
 }
 
-// SessionTimeoutPayload is the payload for timeout tasks
 type SessionTimeoutPayload struct {
 	SessionID uuid.UUID `json:"session_id"`
 }
@@ -104,7 +96,6 @@ func (p *SessionTimeoutPayload) Unmarshal(data []byte) error {
 	return json.Unmarshal(data, p)
 }
 
-// NewSessionTimeoutTask creates a new timeout task
 func NewSessionTimeoutTask(payload SessionTimeoutPayload) (*asynq.Task, error) {
 	data, err := payload.Marshal()
 	if err != nil {
@@ -113,7 +104,6 @@ func NewSessionTimeoutTask(payload SessionTimeoutPayload) (*asynq.Task, error) {
 	return asynq.NewTask(TypeSessionTimeout, data), nil
 }
 
-// PoolScalePayload is the payload for pool scaling tasks
 type PoolScalePayload struct {
 	WorkPoolID      uuid.UUID `json:"work_pool_id"`
 	DesiredSessions int       `json:"desired_sessions"`
@@ -127,7 +117,6 @@ func (p *PoolScalePayload) Unmarshal(data []byte) error {
 	return json.Unmarshal(data, p)
 }
 
-// NewPoolScaleTask creates a new pool scale task
 func NewPoolScaleTask(payload PoolScalePayload) (*asynq.Task, error) {
 	data, err := payload.Marshal()
 	if err != nil {
@@ -136,9 +125,8 @@ func NewPoolScaleTask(payload PoolScalePayload) (*asynq.Task, error) {
 	return asynq.NewTask(TypePoolScale, data), nil
 }
 
-// CleanupExpiredPayload is the payload for cleanup tasks
 type CleanupExpiredPayload struct {
-	MaxAge int `json:"max_age"` // hours
+	MaxAge int `json:"max_age"`
 }
 
 func (p *CleanupExpiredPayload) Marshal() ([]byte, error) {
@@ -149,7 +137,6 @@ func (p *CleanupExpiredPayload) Unmarshal(data []byte) error {
 	return json.Unmarshal(data, p)
 }
 
-// NewCleanupExpiredTask creates a new cleanup task
 func NewCleanupExpiredTask(payload CleanupExpiredPayload) (*asynq.Task, error) {
 	data, err := payload.Marshal()
 	if err != nil {
@@ -158,7 +145,6 @@ func NewCleanupExpiredTask(payload CleanupExpiredPayload) (*asynq.Task, error) {
 	return asynq.NewTask(TypeCleanupExpired, data), nil
 }
 
-// GetQueueForTask returns the appropriate queue name for a task type
 func GetQueueForTask(taskType string) string {
 	switch taskType {
 	case TypeSessionStop:
@@ -172,7 +158,6 @@ func GetQueueForTask(taskType string) string {
 	}
 }
 
-// GetTaskPriority returns the priority for a task type (higher = more important)
 func GetTaskPriority(taskType string) int {
 	switch taskType {
 	case TypeSessionStop:
