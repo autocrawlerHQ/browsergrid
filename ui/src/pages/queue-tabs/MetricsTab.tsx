@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useQuery } from '@tanstack/react-query';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { cn } from '@/lib/utils';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import React from 'react';
 import { fetchAsynqmon, POLLING_INTERVAL, LoadingState, EmptyState, formatBytes, formatDuration } from './shared';
 
@@ -22,6 +22,10 @@ export default function MetricsTab() {
     const [selectedQueues, setSelectedQueues] = useState<string[]>(['default']);
     const [customDuration, setCustomDuration] = useState('3600');
     const [customEndTime, setCustomEndTime] = useState(new Date().toISOString().slice(0, 16));
+    
+    // Animation control state
+    const [shouldAnimate, setShouldAnimate] = useState(true);
+    const previousQueryKey = useRef<string>('');
 
     // Fetch available queues
     const { data: queuesData } = useQuery({
@@ -39,6 +43,8 @@ export default function MetricsTab() {
 
     // 🚩 keep the key stable when realtime is on
     const keyEnd = timeRange.endTime === 'realtime' ? 'realtime' : endTime;
+    
+    const currentQueryKey = JSON.stringify([keyEnd, timeRange.duration, selectedQueues.sort()]);
 
     const { 
         data: metricsData, 
@@ -51,6 +57,18 @@ export default function MetricsTab() {
         placeholderData: (previousData) => previousData,
         refetchInterval: timeRange.endTime === 'realtime' ? POLLING_INTERVAL * 2 : 0,
     });
+
+    // Control animation based on query key changes vs polling updates
+    useEffect(() => {
+        if (previousQueryKey.current !== currentQueryKey) {
+            // Query key changed (filter change or initial mount) - enable animation
+            setShouldAnimate(true);
+            previousQueryKey.current = currentQueryKey;
+        } else if (isFetching && !isInitialLoading) {
+            // Polling update - disable animation
+            setShouldAnimate(false);
+        }
+    }, [currentQueryKey, isFetching, isInitialLoading]);
 
     const handleApplyFilters = () => {
         // Update duration if custom is selected
@@ -352,6 +370,7 @@ export default function MetricsTab() {
                 gradientId="queueSize"
                 syncId="metrics"
                 timeRange={timeRange}
+                shouldAnimate={shouldAnimate}
             />
 
             {/* Processing and Error Metrics */}
@@ -365,6 +384,7 @@ export default function MetricsTab() {
                     gradientId="processRate"
                     syncId="metrics"
                     timeRange={timeRange}
+                    shouldAnimate={shouldAnimate}
                 />
                 <MetricChart
                     key={`fail-rate-${timeRange.duration}-${timeRange.endTime}-${selectedQueues.sort().join(',')}`}
@@ -375,6 +395,7 @@ export default function MetricsTab() {
                     gradientId="failRate"
                     syncId="metrics"
                     timeRange={timeRange}
+                    shouldAnimate={shouldAnimate}
                 />
                 <MetricChart
                     key={`error-rate-${timeRange.duration}-${timeRange.endTime}-${selectedQueues.sort().join(',')}`}
@@ -385,6 +406,7 @@ export default function MetricsTab() {
                     gradientId="errorRate"
                     syncId="metrics"
                     timeRange={timeRange}
+                    shouldAnimate={shouldAnimate}
                 />
             </div>
 
@@ -399,6 +421,7 @@ export default function MetricsTab() {
                     gradientId="memory"
                     syncId="metrics"
                     timeRange={timeRange}
+                    shouldAnimate={shouldAnimate}
                 />
                 <MetricChart
                     key={`latency-${timeRange.duration}-${timeRange.endTime}-${selectedQueues.sort().join(',')}`}
@@ -409,6 +432,7 @@ export default function MetricsTab() {
                     gradientId="latency"
                     syncId="metrics"
                     timeRange={timeRange}
+                    shouldAnimate={shouldAnimate}
                 />
             </div>
 
@@ -423,6 +447,7 @@ export default function MetricsTab() {
                     gradientId="pending"
                     syncId="metrics"
                     timeRange={timeRange}
+                    shouldAnimate={shouldAnimate}
                 />
                 <MetricChart
                     key={`retry-${timeRange.duration}-${timeRange.endTime}-${selectedQueues.sort().join(',')}`}
@@ -433,6 +458,7 @@ export default function MetricsTab() {
                     gradientId="retry"
                     syncId="metrics"
                     timeRange={timeRange}
+                    shouldAnimate={shouldAnimate}
                 />
                 <MetricChart
                     key={`archived-${timeRange.duration}-${timeRange.endTime}-${selectedQueues.sort().join(',')}`}
@@ -443,6 +469,7 @@ export default function MetricsTab() {
                     gradientId="archived"
                     syncId="metrics"
                     timeRange={timeRange}
+                    shouldAnimate={shouldAnimate}
                 />
             </div>
         </div>
@@ -450,7 +477,7 @@ export default function MetricsTab() {
 }
 
 // Metric Chart Component
-const MetricChart = React.memo(function MetricChart({ title, data, dataKey, color, gradientId, syncId, timeRange }: any) {
+const MetricChart = React.memo(function MetricChart({ title, data, dataKey, color, gradientId, syncId, timeRange, shouldAnimate }: any) {
     if (!data?.data?.result || data.data.result.length === 0) {
         return (
             <Card>
@@ -586,6 +613,7 @@ const MetricChart = React.memo(function MetricChart({ title, data, dataKey, colo
                                     strokeWidth={2}
                                     fill={`url(#${gradientId}_${queue})`}
                                     dot={false}
+                                    isAnimationActive={shouldAnimate}
                                 />
                             ))}
                         </LineChart>
@@ -599,7 +627,8 @@ const MetricChart = React.memo(function MetricChart({ title, data, dataKey, colo
     prev.dataKey === next.dataKey && 
     prev.color === next.color &&
     prev.syncId === next.syncId &&
-    prev.timeRange === next.timeRange
+    prev.timeRange === next.timeRange &&
+    prev.shouldAnimate === next.shouldAnimate
 );
 
 // Metrics Skeleton Component
