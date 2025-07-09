@@ -13,7 +13,6 @@ type Store struct{ db *gorm.DB }
 
 func NewStore(db *gorm.DB) *Store { return &Store{db: db} }
 
-// GetDB returns the underlying database connection for advanced operations
 func (s *Store) GetDB() *gorm.DB {
 	return s.db
 }

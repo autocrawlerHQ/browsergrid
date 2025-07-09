@@ -15,13 +15,11 @@ const (
 	authHeaderKey = "Authorization"
 )
 
-// publicPaths defines routes that don't require authentication
 var publicPaths = []string{
 	"/health",
 	"/swagger/",
 }
 
-// isPublicPath checks if the given path should be accessible without authentication
 func isPublicPath(path string) bool {
 	for _, publicPath := range publicPaths {
 		if path == publicPath || strings.HasPrefix(path, publicPath) {

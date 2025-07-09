@@ -486,7 +486,6 @@ func (s *Server) getRequestHost(r *http.Request) string {
 		host = r.Header.Get("Host")
 	}
 	if host == "" {
-		// Fallback to the configured frontend URL host
 		if parsedURL, err := url.Parse(s.frontendBaseURL); err == nil {
 			host = parsedURL.Host
 		}

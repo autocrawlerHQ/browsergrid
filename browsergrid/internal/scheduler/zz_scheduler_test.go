@@ -1,4 +1,3 @@
-// scheduler/scheduler_test.go
 package scheduler
 
 import (
@@ -19,11 +18,9 @@ import (
 )
 
 func setupTestScheduler(t *testing.T) (*Service, *gorm.DB, *asynq.Inspector) {
-	// Use in-memory SQLite for tests
 	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 
-	// Auto-migrate tables
 	err = db.AutoMigrate(
 		&sessions.Session{},
 		&sessions.SessionEvent{},
@@ -32,13 +29,11 @@ func setupTestScheduler(t *testing.T) (*Service, *gorm.DB, *asynq.Inspector) {
 	)
 	require.NoError(t, err)
 
-	// Setup Redis (assuming test Redis is available)
 	redisOpt := asynq.RedisClientOpt{Addr: "localhost:6379"}
 
 	service := New(db, redisOpt)
 	inspector := asynq.NewInspector(redisOpt)
 
-	// Clear queues
 	queues, _ := inspector.Queues()
 	for _, q := range queues {
 		inspector.DeleteAllPendingTasks(q)
@@ -54,7 +49,6 @@ func TestHandlePoolScale(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Create a work pool
 	pool := &workpool.WorkPool{
 		ID:                 uuid.New(),
 		Name:               "test-pool",
@@ -65,7 +59,6 @@ func TestHandlePoolScale(t *testing.T) {
 	err := db.Create(pool).Error
 	require.NoError(t, err)
 
-	// Create pool scale task
 	payload := tasks.PoolScalePayload{
 		WorkPoolID:      pool.ID,
 		DesiredSessions: 3,
@@ -74,11 +67,9 @@ func TestHandlePoolScale(t *testing.T) {
 	data, _ := payload.Marshal()
 	task := asynq.NewTask(tasks.TypePoolScale, data)
 
-	// Execute handler
 	err = service.handlePoolScale(ctx, task)
 	assert.NoError(t, err)
 
-	// Verify sessions were created
 	var sessionCount int64
 	err = db.Model(&sessions.Session{}).
 		Where("work_pool_id = ?", pool.ID).
@@ -86,7 +77,6 @@ func TestHandlePoolScale(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), sessionCount)
 
-	// Verify start tasks were enqueued
 	time.Sleep(100 * time.Millisecond)
 
 	pendingTasks, err := inspector.ListPendingTasks("default")
@@ -107,7 +97,6 @@ func TestHandleCleanupExpired(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Create old terminated sessions
 	oldTime := time.Now().Add(-48 * time.Hour)
 
 	oldSessions := []sessions.Session{
@@ -133,7 +122,6 @@ func TestHandleCleanupExpired(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// Create recent session
 	recentSession := sessions.Session{
 		ID:        uuid.New(),
 		Status:    sessions.StatusCompleted,
@@ -142,7 +130,6 @@ func TestHandleCleanupExpired(t *testing.T) {
 	err := db.Create(&recentSession).Error
 	require.NoError(t, err)
 
-	// Create active session (should not be deleted)
 	activeSession := sessions.Session{
 		ID:        uuid.New(),
 		Status:    sessions.StatusRunning,
@@ -151,9 +138,8 @@ func TestHandleCleanupExpired(t *testing.T) {
 	err = db.Create(&activeSession).Error
 	require.NoError(t, err)
 
-	// Execute cleanup
 	payload := tasks.CleanupExpiredPayload{
-		MaxAge: 24, // 24 hours
+		MaxAge: 24,
 	}
 
 	data, _ := payload.Marshal()
@@ -162,13 +148,11 @@ func TestHandleCleanupExpired(t *testing.T) {
 	err = service.handleCleanupExpired(ctx, task)
 	assert.NoError(t, err)
 
-	// Verify old sessions were deleted
 	var remainingCount int64
 	err = db.Model(&sessions.Session{}).Count(&remainingCount).Error
 	require.NoError(t, err)
-	assert.Equal(t, int64(2), remainingCount) // recent + active
+	assert.Equal(t, int64(2), remainingCount)
 
-	// Verify correct sessions remain
 	var remaining sessions.Session
 	err = db.First(&remaining, "id = ?", recentSession.ID).Error
 	assert.NoError(t, err)

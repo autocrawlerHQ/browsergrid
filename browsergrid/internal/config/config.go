@@ -21,19 +21,16 @@ func Load() Config {
 		RedisDB:     0,
 	}
 
-	// Port
 	if v := os.Getenv("PORT"); v != "" {
 		if port, err := strconv.Atoi(v); err == nil {
 			cfg.Port = port
 		}
 	}
 
-	// Database
 	if v := os.Getenv("DATABASE_URL"); v != "" {
 		cfg.DatabaseURL = v
 	}
 
-	// Redis
 	if v := os.Getenv("REDIS_ADDR"); v != "" {
 		cfg.RedisAddr = v
 	}

@@ -114,7 +114,6 @@ func TestDockerProvisionerIntegration(t *testing.T) {
 		assert.Contains(t, liveURL, "http://localhost:", "Live URL should be localhost")
 
 		assert.NotNil(t, sess.ContainerID, "Session should have container ID")
-		// ContainerNetwork is not set in single-container mode
 		assert.NotNil(t, sess.WSEndpoint, "Session should have WS endpoint")
 		assert.NotNil(t, sess.LiveURL, "Session should have live URL")
 
@@ -149,7 +148,6 @@ func TestDockerProvisionerIntegration(t *testing.T) {
 		})
 
 		t.Run("HealthCheck", func(t *testing.T) {
-			// Give the container time to fully start up
 			var hcErr error
 			for i := 0; i < 5; i++ {
 				hcErr = provisioner.HealthCheck(ctx, sess)
@@ -225,8 +223,6 @@ func TestDockerProvisionerIntegration(t *testing.T) {
 				t.Logf("All containers successfully stopped")
 			}
 
-			// No dedicated container network in single-container mode, so no
-			// network-cleanup assertions are required.
 		})
 	})
 }
@@ -245,7 +241,6 @@ func TestDockerProvisionerStartFailures(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 		defer cancel()
 
-		// Use an invalid browser type to generate a non-existent image
 		sess.Browser = sessions.BrowserChrome
 		sess.Version = sessions.BrowserVersion("nonexistent-invalid-version")
 

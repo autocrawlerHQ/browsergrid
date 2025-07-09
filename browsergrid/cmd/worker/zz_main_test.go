@@ -37,7 +37,6 @@ var (
 func TestMain(m *testing.M) {
 	ctx := context.Background()
 
-	// Start PostgreSQL container
 	var err error
 	testPostgresContainer, err = postgres.Run(ctx,
 		"postgres:15-alpine",
@@ -59,7 +58,6 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Failed to get connection string: %v", err)
 	}
 
-	// Start Redis container
 	testRedisContainer, err = redis.Run(ctx,
 		"redis:7-alpine",
 		redis.WithSnapshotting(10, 1),
@@ -83,7 +81,6 @@ func TestMain(m *testing.M) {
 
 	code := m.Run()
 
-	// Cleanup
 	if err := testPostgresContainer.Terminate(ctx); err != nil {
 		log.Printf("Failed to terminate PostgreSQL container: %v", err)
 	}
@@ -117,7 +114,6 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// MockProvider for testing
 type MockProvider struct {
 	StartCalled      bool
 	StopCalled       bool
@@ -283,12 +279,11 @@ func TestHandleSessionStart(t *testing.T) {
 	sessStore := sessions.NewStore(db)
 	mockProvider := NewMockProvider()
 
-	// Create work pool
 	pool := &workpool.WorkPool{
 		Name:               "test-pool",
 		Provider:           workpool.ProviderDocker,
 		MaxConcurrency:     10,
-		MaxSessionDuration: 300, // 5 minutes
+		MaxSessionDuration: 300,
 	}
 	ctx := context.Background()
 	err := db.Create(pool).Error
@@ -341,18 +336,14 @@ func TestHandleSessionStart(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create session
 			err := sessStore.CreateSession(ctx, tt.session)
 			require.NoError(t, err)
 
-			// Reset mock
 			mockProvider.StartCalled = false
 			mockProvider.StartError = tt.providerError
 
-			// Create handler
 			handler := handleSessionStart(sessStore, mockProvider)
 
-			// Create task
 			payload := tasks.SessionStartPayload{
 				SessionID:          tt.session.ID,
 				WorkPoolID:         pool.ID,
@@ -363,7 +354,6 @@ func TestHandleSessionStart(t *testing.T) {
 			data, _ := payload.Marshal()
 			task := asynq.NewTask(tasks.TypeSessionStart, data)
 
-			// Execute handler
 			err = handler(ctx, task)
 			if tt.expectError {
 				assert.Error(t, err)
@@ -371,10 +361,8 @@ func TestHandleSessionStart(t *testing.T) {
 				assert.NoError(t, err)
 			}
 
-			// Verify provider was called
 			assert.True(t, mockProvider.StartCalled)
 
-			// Check session status
 			updatedSession, err := sessStore.GetSession(ctx, tt.session.ID)
 			require.NoError(t, err)
 			assert.Equal(t, tt.checkStatus, updatedSession.Status)
@@ -456,17 +444,13 @@ func TestHandleSessionStop(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create session
 			err := sessStore.CreateSession(ctx, tt.session)
 			require.NoError(t, err)
 
-			// Reset mock
 			mockProvider.StopCalled = false
 
-			// Create handler
 			handler := handleSessionStop(sessStore, mockProvider)
 
-			// Create task
 			payload := tasks.SessionStopPayload{
 				SessionID: tt.session.ID,
 				Reason:    tt.reason,
@@ -474,7 +458,6 @@ func TestHandleSessionStop(t *testing.T) {
 			data, _ := payload.Marshal()
 			task := asynq.NewTask(tasks.TypeSessionStop, data)
 
-			// Execute handler
 			err = handler(ctx, task)
 			if tt.expectError {
 				assert.Error(t, err)
@@ -482,10 +465,8 @@ func TestHandleSessionStop(t *testing.T) {
 				assert.NoError(t, err)
 			}
 
-			// Verify provider was called
 			assert.True(t, mockProvider.StopCalled)
 
-			// Check final status
 			updatedSession, err := sessStore.GetSession(ctx, tt.session.ID)
 			require.NoError(t, err)
 			assert.Equal(t, tt.finalStatus, updatedSession.Status)
@@ -562,24 +543,18 @@ func TestHandleSessionHealthCheck(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create session
 			err := sessStore.CreateSession(ctx, tt.session)
 			require.NoError(t, err)
 
-			// Setup mock
 			mockProvider.HealthCheckError = tt.healthCheckError
 
-			// Create a test Redis client to check for enqueued tasks
 			redisOpt := asynq.RedisClientOpt{Addr: testRedisAddr}
 			inspector := asynq.NewInspector(redisOpt)
 
-			// Clear any existing tasks
 			inspector.DeleteAllPendingTasks("critical")
 
-			// Create handler
 			handler := handleSessionHealthCheck(sessStore, mockProvider)
 
-			// Create task
 			payload := tasks.SessionHealthCheckPayload{
 				SessionID: tt.session.ID,
 				RedisAddr: testRedisAddr,
@@ -587,18 +562,14 @@ func TestHandleSessionHealthCheck(t *testing.T) {
 			data, _ := payload.Marshal()
 			task := asynq.NewTask(tasks.TypeSessionHealthCheck, data)
 
-			// Execute handler
 			err = handler(ctx, task)
 			assert.NoError(t, err)
 
-			// Check session status
 			updatedSession, err := sessStore.GetSession(ctx, tt.session.ID)
 			require.NoError(t, err)
 			assert.Equal(t, tt.expectedStatus, updatedSession.Status)
 
-			// Check if stop task was enqueued
 			if tt.expectStopTask {
-				// Give it a moment to process
 				time.Sleep(100 * time.Millisecond)
 
 				pendingTasks, err := inspector.ListPendingTasks("critical")
@@ -623,15 +594,12 @@ func TestHealthCheckFunction(t *testing.T) {
 
 	healthFunc := healthCheck(sessStore)
 
-	// Should succeed with valid database
 	err := healthFunc()
 	assert.NoError(t, err)
 
-	// Close database to simulate failure
 	sqlDB, _ := db.DB()
 	sqlDB.Close()
 
-	// Should fail with closed database
 	err = healthFunc()
 	assert.Error(t, err)
 }
@@ -645,13 +613,11 @@ func TestQueueConfiguration(t *testing.T) {
 		},
 	}
 
-	// Verify queue priorities
 	assert.Equal(t, 10, cfg.Queues["critical"])
 	assert.Equal(t, 5, cfg.Queues["default"])
 	assert.Equal(t, 1, cfg.Queues["low"])
 }
 
-// Helper function to create test sessions
 func createTestSession(poolID uuid.UUID, status sessions.SessionStatus) *sessions.Session {
 	return &sessions.Session{
 		ID:              uuid.New(),

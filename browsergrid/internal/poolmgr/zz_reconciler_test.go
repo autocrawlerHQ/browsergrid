@@ -36,7 +36,6 @@ var (
 func TestMain(m *testing.M) {
 	ctx := context.Background()
 
-	// Start PostgreSQL container
 	var err error
 	testPostgresContainer, err = postgres.Run(ctx,
 		"postgres:15-alpine",
@@ -58,7 +57,6 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Failed to get connection string: %v", err)
 	}
 
-	// Start Redis container
 	testRedisContainer, err = redis.Run(ctx,
 		"redis:7-alpine",
 		redis.WithSnapshotting(10, 1),
@@ -82,7 +80,6 @@ func TestMain(m *testing.M) {
 
 	code := m.Run()
 
-	// Cleanup
 	if err := testPostgresContainer.Terminate(ctx); err != nil {
 		log.Printf("Failed to terminate PostgreSQL container: %v", err)
 	}
@@ -120,7 +117,6 @@ func setupTestRedisClient(t *testing.T) *asynq.Client {
 	redisOpt := asynq.RedisClientOpt{Addr: testRedisAddr}
 	client := asynq.NewClient(redisOpt)
 
-	// Clear any existing tasks
 	inspector := asynq.NewInspector(redisOpt)
 	queues, _ := inspector.Queues()
 	for _, q := range queues {
@@ -215,7 +211,6 @@ func TestReconciler_ReconcilePool(t *testing.T) {
 	reconciler := NewReconciler(db, client)
 	ctx := context.Background()
 
-	// Create an inspector to check enqueued tasks
 	inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: testRedisAddr})
 
 	tests := []struct {
@@ -238,7 +233,7 @@ func TestReconciler_ReconcilePool(t *testing.T) {
 				sessions.StatusRunning,
 			},
 			expectScaleTask:  true,
-			expectedSessions: 2, // Need 2 more to reach min size of 3
+			expectedSessions: 2,
 		},
 		{
 			name: "no scaling needed",
@@ -274,7 +269,6 @@ func TestReconciler_ReconcilePool(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear any existing tasks
 			inspector.DeleteAllPendingTasks("low")
 
 			err := reconciler.wpStore.CreateWorkPool(ctx, tt.pool)
@@ -289,10 +283,8 @@ func TestReconciler_ReconcilePool(t *testing.T) {
 			err = reconciler.reconcilePool(ctx, tt.pool)
 			assert.NoError(t, err)
 
-			// Give it a moment to process
 			time.Sleep(100 * time.Millisecond)
 
-			// Check if scaling task was enqueued
 			pendingTasks, err := inspector.ListPendingTasks("low")
 			require.NoError(t, err)
 
@@ -302,7 +294,6 @@ func TestReconciler_ReconcilePool(t *testing.T) {
 			for _, task := range pendingTasks {
 				if task.Type == tasks.TypePoolScale {
 					foundScaleTask = true
-					// Parse the payload to check desired sessions
 					err = json.Unmarshal(task.Payload, &scalePayload)
 					require.NoError(t, err)
 					break
@@ -316,7 +307,6 @@ func TestReconciler_ReconcilePool(t *testing.T) {
 				assert.Equal(t, tt.expectedSessions, scalePayload.DesiredSessions)
 			}
 
-			// Cleanup
 			err = db.Where("work_pool_id = ?", tt.pool.ID).Delete(&sessions.Session{}).Error
 			require.NoError(t, err)
 			err = db.Delete(tt.pool).Error
@@ -333,41 +323,34 @@ func TestReconciler_HandleIdleSessions(t *testing.T) {
 	reconciler := NewReconciler(db, client)
 	ctx := context.Background()
 
-	// Create an inspector to check enqueued tasks
 	inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: testRedisAddr})
 
 	pool := &workpool.WorkPool{
 		Name:           "test-pool",
 		Provider:       workpool.ProviderDocker,
 		MaxConcurrency: 10,
-		MaxIdleTime:    60, // 60 seconds
+		MaxIdleTime:    60,
 		AutoScale:      true,
 	}
 	err := reconciler.wpStore.CreateWorkPool(ctx, pool)
 	require.NoError(t, err)
 
-	// Create an old idle session
 	oldSession := createTestSession(pool.ID, sessions.StatusIdle)
 	oldSession.UpdatedAt = time.Now().Add(-2 * time.Minute)
 	err = reconciler.sessStore.CreateSession(ctx, oldSession)
 	require.NoError(t, err)
 
-	// Create a recent idle session
 	recentSession := createTestSession(pool.ID, sessions.StatusIdle)
 	err = reconciler.sessStore.CreateSession(ctx, recentSession)
 	require.NoError(t, err)
 
-	// Clear any existing tasks
 	inspector.DeleteAllPendingTasks("default")
 
-	// Run reconciliation
 	err = reconciler.reconcilePool(ctx, pool)
 	assert.NoError(t, err)
 
-	// Give it a moment to process
 	time.Sleep(100 * time.Millisecond)
 
-	// Check if stop task was enqueued for the old idle session
 	pendingTasks, err := inspector.ListPendingTasks("default")
 	require.NoError(t, err)
 
@@ -408,7 +391,6 @@ func TestReconciler_GetPoolStats(t *testing.T) {
 	err := reconciler.wpStore.CreateWorkPool(ctx, pool)
 	require.NoError(t, err)
 
-	// Create sessions with different statuses
 	sessionStatuses := []sessions.SessionStatus{
 		sessions.StatusPending,
 		sessions.StatusPending,
@@ -427,28 +409,23 @@ func TestReconciler_GetPoolStats(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, stats)
 
-	// Verify pool info
 	assert.Equal(t, pool.ID, stats.Pool.ID)
 	assert.Equal(t, pool.Name, stats.Pool.Name)
 
-	// Verify session counts
 	assert.Equal(t, 2, stats.SessionsByStatus[sessions.StatusPending])
 	assert.Equal(t, 1, stats.SessionsByStatus[sessions.StatusRunning])
 	assert.Equal(t, 1, stats.SessionsByStatus[sessions.StatusIdle])
 	assert.Equal(t, 1, stats.SessionsByStatus[sessions.StatusCompleted])
 
-	// Verify utilization
-	expectedUtilization := float64(2) / float64(10) * 100 // (running + idle) / max * 100
+	expectedUtilization := float64(2) / float64(10) * 100
 	assert.Equal(t, expectedUtilization, stats.UtilizationPercent)
 
-	// Verify scaling info
 	assert.Equal(t, pool.MinSize, stats.ScalingInfo.MinSize)
 	assert.Equal(t, pool.MaxConcurrency, stats.ScalingInfo.MaxConcurrency)
 	assert.Equal(t, pool.AutoScale, stats.ScalingInfo.AutoScale)
 	assert.Equal(t, pool.MaxIdleTime, stats.ScalingInfo.MaxIdleTime)
 	assert.Equal(t, pool.MaxSessionDuration, stats.ScalingInfo.MaxSessionDuration)
 
-	// Queue stats should be present (even if zero)
 	assert.NotNil(t, stats.QueueStats)
 }
 
@@ -488,13 +465,8 @@ func TestReconciler_ScheduleCleanupTasks(t *testing.T) {
 
 	reconciler := NewReconciler(db, client)
 
-	// Schedule cleanup tasks
 	err := reconciler.scheduleCleanupTasks()
 	assert.NoError(t, err)
-
-	// Verify scheduler is running by checking Redis
-	// The scheduler should have registered the cleanup task
-	// Note: This is a basic test - in production you'd want more comprehensive tests
 }
 
 func TestGetQueueNameForProvider(t *testing.T) {
@@ -516,7 +488,6 @@ func TestGetQueueNameForProvider(t *testing.T) {
 	}
 }
 
-// Helper function to create test sessions
 func createTestSession(poolID uuid.UUID, status sessions.SessionStatus) *sessions.Session {
 	envData, _ := json.Marshal(map[string]string{})
 	return &sessions.Session{

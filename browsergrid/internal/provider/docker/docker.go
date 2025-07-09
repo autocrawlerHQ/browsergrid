@@ -45,10 +45,8 @@ func NewDockerProvisioner() *DockerProvisioner {
 
 func (p *DockerProvisioner) GetType() workpool.ProviderType { return workpool.ProviderDocker }
 
-// keepContainers returns true if containers should be kept for debugging
 func (p *DockerProvisioner) keepContainers() bool {
 	return strings.ToLower(os.Getenv("BROWSERGRID_KEEP_CONTAINERS")) == "true"
-	// return true
 }
 
 func (p *DockerProvisioner) Start(

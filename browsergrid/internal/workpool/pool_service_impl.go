@@ -9,7 +9,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// PoolServiceImpl implements the sessions.PoolService interface
 type PoolServiceImpl struct{ db *gorm.DB }
 
 func NewPoolService(db *gorm.DB) *PoolServiceImpl {
@@ -17,7 +16,6 @@ func NewPoolService(db *gorm.DB) *PoolServiceImpl {
 }
 
 func (p *PoolServiceImpl) GetOrCreateDefault(ctx context.Context, provider string) (uuid.UUID, error) {
-	// Auto-create table if it doesn't exist
 	if err := p.db.WithContext(ctx).AutoMigrate(&WorkPool{}); err != nil {
 		return uuid.Nil, err
 	}

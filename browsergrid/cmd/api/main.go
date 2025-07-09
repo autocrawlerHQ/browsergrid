@@ -56,7 +56,6 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Initialize database
 	database, err := db.New(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("db: %v", err)
@@ -76,25 +75,21 @@ func main() {
 	}
 	log.Println("✓ Database connection established")
 
-	// Initialize Redis/Asynq
 	redisOpt := asynq.RedisClientOpt{
 		Addr:     cfg.RedisAddr,
 		Password: cfg.RedisPassword,
 		DB:       cfg.RedisDB,
 	}
 
-	// Create Asynq client for API
 	taskClient := asynq.NewClient(redisOpt)
 	defer taskClient.Close()
 
-	// Test Redis connection
 	inspector := asynq.NewInspector(redisOpt)
 	if _, err := inspector.Queues(); err != nil {
 		log.Fatalf("Failed to connect to Redis: %v", err)
 	}
 	log.Println("✓ Redis connection established")
 
-	// Start scheduler service (handles pool scaling and cleanup)
 	schedulerSvc := scheduler.New(database.DB, redisOpt)
 	go func() {
 		log.Println("Starting scheduler service...")
@@ -104,7 +99,6 @@ func main() {
 	}()
 	defer schedulerSvc.Stop()
 
-	// Start pool reconciler (monitors pools and enqueues scaling tasks)
 	reconciler := poolmgr.NewReconciler(database.DB, taskClient)
 	reconcilerCtx, reconcilerCancel := context.WithCancel(ctx)
 	defer reconcilerCancel()
@@ -118,7 +112,6 @@ func main() {
 		}
 	}()
 
-	// Create HTTP router
 	r := router.New(database, reconciler, taskClient, redisOpt)
 
 	srv := &http.Server{
@@ -142,7 +135,6 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Shutdown HTTP server
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Fatal("Server forced to shutdown:", err)
 	}

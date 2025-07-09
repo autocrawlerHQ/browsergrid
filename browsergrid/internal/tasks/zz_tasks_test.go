@@ -1,4 +1,3 @@
-// tasks/tasks_test.go
 package tasks
 
 import (
@@ -18,12 +17,10 @@ func TestSessionStartPayload(t *testing.T) {
 		QueueName:          "default",
 	}
 
-	// Test marshaling
 	data, err := payload.Marshal()
 	require.NoError(t, err)
 	assert.NotEmpty(t, data)
 
-	// Test unmarshaling
 	var decoded SessionStartPayload
 	err = decoded.Unmarshal(data)
 	require.NoError(t, err)
@@ -77,11 +74,9 @@ func TestSessionStopPayload(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Test marshaling
 			data, err := tt.payload.Marshal()
 			require.NoError(t, err)
 
-			// Test unmarshaling
 			var decoded SessionStopPayload
 			err = decoded.Unmarshal(data)
 			require.NoError(t, err)
@@ -143,18 +138,15 @@ func TestPoolScalePayload(t *testing.T) {
 		DesiredSessions: 5,
 	}
 
-	// Test marshaling
 	data, err := payload.Marshal()
 	require.NoError(t, err)
 
-	// Test unmarshaling
 	var decoded PoolScalePayload
 	err = decoded.Unmarshal(data)
 	require.NoError(t, err)
 	assert.Equal(t, payload.WorkPoolID, decoded.WorkPoolID)
 	assert.Equal(t, payload.DesiredSessions, decoded.DesiredSessions)
 
-	// Test task creation
 	task, err := NewPoolScaleTask(payload)
 	require.NoError(t, err)
 	assert.Equal(t, TypePoolScale, task.Type())
@@ -162,20 +154,17 @@ func TestPoolScalePayload(t *testing.T) {
 
 func TestCleanupExpiredPayload(t *testing.T) {
 	payload := CleanupExpiredPayload{
-		MaxAge: 24, // 24 hours
+		MaxAge: 24,
 	}
 
-	// Test marshaling
 	data, err := payload.Marshal()
 	require.NoError(t, err)
 
-	// Test unmarshaling
 	var decoded CleanupExpiredPayload
 	err = decoded.Unmarshal(data)
 	require.NoError(t, err)
 	assert.Equal(t, payload.MaxAge, decoded.MaxAge)
 
-	// Test task creation
 	task, err := NewCleanupExpiredTask(payload)
 	require.NoError(t, err)
 	assert.Equal(t, TypeCleanupExpired, task.Type())

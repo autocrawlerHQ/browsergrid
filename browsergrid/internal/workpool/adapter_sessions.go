@@ -9,13 +9,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// Adapter satisfies sessions.WorkPoolPort
 type Adapter struct{ db *gorm.DB }
 
 func NewAdapter(db *gorm.DB) *Adapter { return &Adapter{db: db} }
 
 func (a *Adapter) GetOrCreateDefault(ctx context.Context, provider string) (uuid.UUID, error) {
-	// Auto-create table if it doesn't exist
 	if err := a.db.WithContext(ctx).AutoMigrate(&WorkPool{}); err != nil {
 		return uuid.Nil, err
 	}

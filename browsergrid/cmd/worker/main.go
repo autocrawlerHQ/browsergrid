@@ -25,34 +25,29 @@ type WorkerConfig struct {
 	Provider    string
 	DatabaseURL string
 	RedisAddr   string
-	Concurrency int            // Number of concurrent tasks this worker can handle
-	Queues      map[string]int // Queue priorities
+	Concurrency int
+	Queues      map[string]int
 }
 
 func main() {
-	// Print startup banner
 	log.Println("========================================")
 	log.Println("       BrowserGrid Worker v2.0         ")
 	log.Println("========================================")
 
 	cfg := loadConfig()
 
-	// Initialize database
 	db, err := connectDB(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatal("[STARTUP] ✗ Failed to connect to database:", err)
 	}
 
-	// Initialize stores
 	sessStore := sessions.NewStore(db)
 
-	// Initialize provider
 	prov, ok := provider.FromString(cfg.Provider)
 	if !ok {
 		log.Fatalf("[STARTUP] ✗ Unknown provider type: %s", cfg.Provider)
 	}
 
-	// Create Asynq worker server
 	redisOpt := asynq.RedisClientOpt{Addr: cfg.RedisAddr}
 
 	srv := asynq.NewServer(
@@ -65,10 +60,8 @@ func main() {
 		},
 	)
 
-	// Create task handlers
 	mux := asynq.NewServeMux()
 
-	// Session lifecycle handlers
 	mux.HandleFunc(tasks.TypeSessionStart, handleSessionStart(sessStore, prov))
 	mux.HandleFunc(tasks.TypeSessionStop, handleSessionStop(sessStore, prov))
 	mux.HandleFunc(tasks.TypeSessionHealthCheck, handleSessionHealthCheck(sessStore, prov))
@@ -83,7 +76,6 @@ func main() {
 	log.Printf("[WORKER] Ready to process tasks...")
 	log.Printf("[WORKER] =======================================")
 
-	// Handle shutdown gracefully
 	_, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -96,13 +88,11 @@ func main() {
 		cancel()
 	}()
 
-	// Run the server
 	if err := srv.Run(mux); err != nil {
 		log.Fatal("[WORKER] ✗ Failed to run server:", err)
 	}
 }
 
-// handleSessionStart processes a session start task
 func handleSessionStart(store *sessions.Store, prov provider.Provisioner) asynq.HandlerFunc {
 	return func(ctx context.Context, t *asynq.Task) error {
 		var payload tasks.SessionStartPayload
@@ -112,25 +102,21 @@ func handleSessionStart(store *sessions.Store, prov provider.Provisioner) asynq.
 
 		log.Printf("[TASK] Starting session %s", payload.SessionID)
 
-		// Get session from database
 		sess, err := store.GetSession(ctx, payload.SessionID)
 		if err != nil {
 			return fmt.Errorf("failed to get session: %w", err)
 		}
 
-		// Update status to starting
 		if err := store.UpdateSessionStatus(ctx, sess.ID, sessions.StatusStarting); err != nil {
 			log.Printf("[TASK] Warning: Failed to update session status: %v", err)
 		}
 
-		// Start the browser container
 		wsURL, liveURL, err := prov.Start(ctx, sess)
 		if err != nil {
 			store.UpdateSessionStatus(ctx, sess.ID, sessions.StatusFailed)
 			return fmt.Errorf("failed to start provider: %w", err)
 		}
 
-		// Update session with endpoints
 		if err := store.UpdateSessionEndpoints(ctx, sess.ID, wsURL, liveURL, sessions.StatusRunning); err != nil {
 			return fmt.Errorf("failed to update session endpoints: %w", err)
 		}
@@ -139,7 +125,6 @@ func handleSessionStart(store *sessions.Store, prov provider.Provisioner) asynq.
 		log.Printf("[TASK] └── WebSocket: %s", wsURL)
 		log.Printf("[TASK] └── Live URL: %s", liveURL)
 
-		// Schedule health checks
 		client := asynq.NewClient(asynq.RedisClientOpt{Addr: payload.RedisAddr})
 		defer client.Close()
 
@@ -157,7 +142,6 @@ func handleSessionStart(store *sessions.Store, prov provider.Provisioner) asynq.
 			log.Printf("[TASK] Warning: Failed to schedule health check: %v", err)
 		}
 
-		// Schedule timeout if MaxSessionDuration is set
 		if payload.MaxSessionDuration > 0 {
 			timeoutPayload := tasks.SessionTimeoutPayload{
 				SessionID: sess.ID,
@@ -178,7 +162,6 @@ func handleSessionStart(store *sessions.Store, prov provider.Provisioner) asynq.
 	}
 }
 
-// handleSessionStop processes a session stop task
 func handleSessionStop(store *sessions.Store, prov provider.Provisioner) asynq.HandlerFunc {
 	return func(ctx context.Context, t *asynq.Task) error {
 		var payload tasks.SessionStopPayload
@@ -188,18 +171,15 @@ func handleSessionStop(store *sessions.Store, prov provider.Provisioner) asynq.H
 
 		log.Printf("[TASK] Stopping session %s", payload.SessionID)
 
-		// Get session from database
 		sess, err := store.GetSession(ctx, payload.SessionID)
 		if err != nil {
 			return fmt.Errorf("failed to get session: %w", err)
 		}
 
-		// Stop the provider
 		if err := prov.Stop(ctx, sess); err != nil {
 			log.Printf("[TASK] ✗ Error stopping provider for session %s: %v", sess.ID, err)
 		}
 
-		// Update session status
 		status := sessions.StatusCompleted
 		if payload.Reason == "timeout" {
 			status = sessions.StatusTimedOut
@@ -216,7 +196,6 @@ func handleSessionStop(store *sessions.Store, prov provider.Provisioner) asynq.H
 	}
 }
 
-// handleSessionHealthCheck processes a health check task
 func handleSessionHealthCheck(store *sessions.Store, prov provider.Provisioner) asynq.HandlerFunc {
 	return func(ctx context.Context, t *asynq.Task) error {
 		var payload tasks.SessionHealthCheckPayload
@@ -224,26 +203,21 @@ func handleSessionHealthCheck(store *sessions.Store, prov provider.Provisioner) 
 			return fmt.Errorf("failed to unmarshal payload: %w", err)
 		}
 
-		// Get session from database
 		sess, err := store.GetSession(ctx, payload.SessionID)
 		if err != nil {
 			return fmt.Errorf("failed to get session: %w", err)
 		}
 
-		// Skip health check if session is in terminal state
 		if sessions.IsTerminalStatus(sess.Status) {
 			log.Printf("[HEALTH] Session %s is in terminal state %s, skipping health check", sess.ID, sess.Status)
 			return nil
 		}
 
-		// Perform health check
 		if err := prov.HealthCheck(ctx, sess); err != nil {
 			log.Printf("[HEALTH] ✗ Session %s health check failed: %v", sess.ID, err)
 
-			// Mark session as crashed and stop it
 			store.UpdateSessionStatus(ctx, sess.ID, sessions.StatusCrashed)
 
-			// Enqueue stop task
 			client := asynq.NewClient(asynq.RedisClientOpt{Addr: payload.RedisAddr})
 			defer client.Close()
 
@@ -258,7 +232,6 @@ func handleSessionHealthCheck(store *sessions.Store, prov provider.Provisioner) 
 			return nil
 		}
 
-		// Collect metrics if available
 		if metrics, err := prov.GetMetrics(ctx, sess); err == nil {
 			store.CreateMetrics(ctx, metrics)
 			log.Printf("[METRICS] %s: CPU=%.1f%%, Memory=%.0fMB",
@@ -267,7 +240,6 @@ func handleSessionHealthCheck(store *sessions.Store, prov provider.Provisioner) 
 				safeDeref(metrics.MemoryMB, 0.0))
 		}
 
-		// Schedule next health check
 		client := asynq.NewClient(asynq.RedisClientOpt{Addr: payload.RedisAddr})
 		defer client.Close()
 
@@ -281,7 +253,6 @@ func handleSessionHealthCheck(store *sessions.Store, prov provider.Provisioner) 
 	}
 }
 
-// handleSessionTimeout processes session timeout
 func handleSessionTimeout(store *sessions.Store, prov provider.Provisioner) asynq.HandlerFunc {
 	return func(ctx context.Context, t *asynq.Task) error {
 		var payload tasks.SessionTimeoutPayload
@@ -291,7 +262,6 @@ func handleSessionTimeout(store *sessions.Store, prov provider.Provisioner) asyn
 
 		log.Printf("[TIMEOUT] Session %s has reached its maximum duration", payload.SessionID)
 
-		// Enqueue stop task
 		client := asynq.NewClient(asynq.RedisClientOpt{Addr: os.Getenv("REDIS_ADDR")})
 		defer client.Close()
 
@@ -309,11 +279,9 @@ func handleSessionTimeout(store *sessions.Store, prov provider.Provisioner) asyn
 
 func healthCheck(store *sessions.Store) func() error {
 	return func() error {
-		// Implement worker health check
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		// Check database connection
 		db := store.GetDB()
 		sqlDB, err := db.DB()
 		if err != nil {

@@ -16,7 +16,6 @@ import (
 func New(database *db.DB, reconciler *poolmgr.Reconciler, taskClient *asynq.Client, redisOpt asynq.RedisClientOpt) *gin.Engine {
 	r := gin.Default()
 
-	// CORS middleware
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"*"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"},
@@ -25,16 +24,13 @@ func New(database *db.DB, reconciler *poolmgr.Reconciler, taskClient *asynq.Clie
 		AllowCredentials: true,
 	}))
 
-	// Health check
 	r.GET("/health", func(c *gin.Context) {
-		// Check database
 		sqlDB, _ := database.DB.DB()
 		if err := sqlDB.Ping(); err != nil {
 			c.JSON(503, gin.H{"status": "unhealthy", "database": "down", "error": err.Error()})
 			return
 		}
 
-		// Check Redis
 		inspector := asynq.NewInspector(redisOpt)
 		if _, err := inspector.Queues(); err != nil {
 			c.JSON(503, gin.H{"status": "unhealthy", "redis": "down", "error": err.Error()})
@@ -48,16 +44,12 @@ func New(database *db.DB, reconciler *poolmgr.Reconciler, taskClient *asynq.Clie
 		})
 	})
 
-	// Swagger documentation
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	// API v1 routes
 	v1 := r.Group("/api/v1")
 	{
-		// Work pool adapter for sessions
 		poolAdapter := workpool.NewAdapter(database.DB)
 
-		// Sessions routes with dependencies
 		sessionDeps := sessions.Dependencies{
 			DB:         database.DB,
 			PoolSvc:    poolAdapter,
@@ -65,10 +57,8 @@ func New(database *db.DB, reconciler *poolmgr.Reconciler, taskClient *asynq.Clie
 		}
 		sessions.RegisterRoutes(v1, sessionDeps)
 
-		// Work pool routes
 		workpool.RegisterRoutes(v1, database.DB)
 
-		// Pool management routes
 		poolmgr.RegisterRoutes(v1, reconciler)
 
 	}

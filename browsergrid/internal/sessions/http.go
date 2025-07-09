@@ -33,7 +33,6 @@ func RegisterRoutes(rg *gin.RouterGroup, deps Dependencies) {
 	rg.GET("/sessions/:id/events", listEvents(store))
 	rg.POST("/sessions/:id/metrics", createMetrics(store))
 
-	// Add flat endpoints that tests expect
 	rg.POST("/events", createEvent(store))
 	rg.GET("/events", listEvents(store))
 	rg.POST("/metrics", createMetrics(store))
@@ -58,13 +57,11 @@ func createSession(store *Store, deps Dependencies) gin.HandlerFunc {
 			return
 		}
 
-		// Reject empty request body
 		if req.Browser == "" && req.Version == "" && req.OperatingSystem == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "browser is required"})
 			return
 		}
 
-		// Set defaults for all fields
 		if req.Browser == "" {
 			req.Browser = BrowserChrome
 		}
@@ -75,7 +72,6 @@ func createSession(store *Store, deps Dependencies) gin.HandlerFunc {
 			req.OperatingSystem = OSLinux
 		}
 
-		// Set default screen dimensions if not provided
 		if req.Screen.Width == 0 || req.Screen.Height == 0 {
 			req.Screen.Width = 1920
 			req.Screen.Height = 1080
@@ -87,7 +83,6 @@ func createSession(store *Store, deps Dependencies) gin.HandlerFunc {
 			req.Screen.Scale = 1.0
 		}
 
-		// Set default resource limits if not provided
 		if req.ResourceLimits.CPU == nil {
 			cpu := 2.0
 			req.ResourceLimits.CPU = &cpu
@@ -101,23 +96,19 @@ func createSession(store *Store, deps Dependencies) gin.HandlerFunc {
 			req.ResourceLimits.TimeoutMinutes = &timeout
 		}
 
-		// Set default provider
 		if req.Provider == "" {
 			req.Provider = "docker"
 		}
 
-		// Set default environment if not provided
 		if req.Environment == nil {
 			req.Environment = []byte("{}")
 		}
 
-		// Set default expiration (1 hour from now)
 		if req.ExpiresAt == nil {
 			expires := time.Now().Add(1 * time.Hour)
 			req.ExpiresAt = &expires
 		}
 
-		// Assign to default work pool if not specified
 		if req.WorkPoolID == nil {
 			if err := assignToDefaultWorkPool(c.Request.Context(), deps.PoolSvc, &req); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to assign to default work pool: " + err.Error()})
@@ -125,14 +116,12 @@ func createSession(store *Store, deps Dependencies) gin.HandlerFunc {
 			}
 		}
 
-		// Create session in pending state
 		req.Status = StatusPending
 		if err := store.CreateSession(c.Request.Context(), &req); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
-		// Get work pool configuration
 		ctx := c.Request.Context()
 		pool, err := getWorkPool(ctx, deps.DB, *req.WorkPoolID)
 		if err != nil {
@@ -140,7 +129,6 @@ func createSession(store *Store, deps Dependencies) gin.HandlerFunc {
 			return
 		}
 
-		// Enqueue session start task
 		payload := tasks.SessionStartPayload{
 			SessionID:          req.ID,
 			WorkPoolID:         *req.WorkPoolID,
@@ -151,29 +139,24 @@ func createSession(store *Store, deps Dependencies) gin.HandlerFunc {
 
 		task, err := tasks.NewSessionStartTask(payload)
 		if err != nil {
-			// Update session to failed if we can't create the task
 			store.UpdateSessionStatus(ctx, req.ID, StatusFailed)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create task: " + err.Error()})
 			return
 		}
 
-		// Enqueue with appropriate options
 		info, err := deps.TaskClient.Enqueue(task,
 			asynq.Queue(payload.QueueName),
 			asynq.MaxRetry(3),
 			asynq.Timeout(5*time.Minute),
 		)
 		if err != nil {
-			// Update session to failed if we can't enqueue
 			store.UpdateSessionStatus(ctx, req.ID, StatusFailed)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to enqueue task: " + err.Error()})
 			return
 		}
 
-		// Log task creation
 		log.Printf("[API] Created session %s and enqueued task %s", req.ID, info.ID)
 
-		// Create session created event
 		event := SessionEvent{
 			SessionID: req.ID,
 			Event:     EvtSessionCreated,
@@ -211,13 +194,11 @@ func deleteSession(store *Store, deps Dependencies) gin.HandlerFunc {
 			return
 		}
 
-		// If session is already in terminal state, just return success
 		if IsTerminalStatus(sess.Status) {
 			c.JSON(http.StatusOK, gin.H{"message": "session already terminated"})
 			return
 		}
 
-		// Enqueue stop task
 		payload := tasks.SessionStopPayload{
 			SessionID: sess.ID,
 			Reason:    "user_requested",
@@ -229,7 +210,6 @@ func deleteSession(store *Store, deps Dependencies) gin.HandlerFunc {
 			return
 		}
 
-		// Enqueue with high priority
 		info, err := deps.TaskClient.Enqueue(task,
 			asynq.Queue("critical"),
 			asynq.MaxRetry(5),
@@ -242,7 +222,6 @@ func deleteSession(store *Store, deps Dependencies) gin.HandlerFunc {
 
 		log.Printf("[API] Enqueued stop task %s for session %s", info.ID, sess.ID)
 
-		// Update status to terminating
 		store.UpdateSessionStatus(c.Request.Context(), sess.ID, StatusTerminated)
 
 		c.JSON(http.StatusOK, gin.H{"message": "session termination initiated"})
@@ -402,7 +381,6 @@ func listEvents(store *Store) gin.HandlerFunc {
 			start, end   *time.Time
 		)
 
-		// Accept session ID from URL param or query parameter
 		if idStr := c.Param("id"); idStr != "" {
 			sessionID, err := uuid.Parse(idStr)
 			if err != nil {
@@ -471,7 +449,6 @@ func createMetrics(store *Store) gin.HandlerFunc {
 			return
 		}
 
-		// Accept session ID from URL param or JSON body
 		if idStr := c.Param("id"); idStr != "" {
 			sessionID, err := uuid.Parse(idStr)
 			if err != nil {
@@ -494,8 +471,6 @@ func createMetrics(store *Store) gin.HandlerFunc {
 	}
 }
 
-// Helper functions
-
 func assignToDefaultWorkPool(ctx context.Context, poolSvc PoolService, session *Session) error {
 	id, err := poolSvc.GetOrCreateDefault(ctx, session.Provider)
 	if err != nil {
@@ -512,7 +487,6 @@ func getWorkPool(ctx context.Context, db *gorm.DB, id uuid.UUID) (*WorkPool, err
 }
 
 func getQueueName(provider ProviderType) string {
-	// Map providers to specific queues if needed
 	switch provider {
 	case ProviderDocker:
 		return "default"
@@ -525,7 +499,6 @@ func getQueueName(provider ProviderType) string {
 	}
 }
 
-// WorkPool is a minimal type to avoid circular import
 type WorkPool struct {
 	ID                 uuid.UUID
 	Provider           ProviderType
