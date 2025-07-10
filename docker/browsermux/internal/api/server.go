@@ -4,58 +4,45 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"strings"
-	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/gorilla/websocket"
 
 	"browsermux/internal/api/middleware"
 	"browsermux/internal/browser"
 	"browsermux/internal/config"
-	"browsermux/internal/events"
-	"browsermux/internal/webhook"
 )
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
+}
 
 type Server struct {
 	router          *mux.Router
 	server          *http.Server
 	cdpProxy        *browser.CDPProxy
-	webhookManager  webhook.Manager
-	eventDispatcher events.Dispatcher
+	eventDispatcher browser.EventDispatcher
 	browserBaseURL  string
 	frontendBaseURL string
 	config          *config.Config
 }
 
-func NewServer(cdpProxy *browser.CDPProxy, webhookManager webhook.Manager, eventDispatcher events.Dispatcher, port string, cfg *config.Config) *Server {
+func NewServer(cdpProxy *browser.CDPProxy, eventDispatcher browser.EventDispatcher, port string, cfg *config.Config) *Server {
 	router := mux.NewRouter()
 
-	browserBaseURL := cdpProxy.GetConfig().BrowserURL
-
-	if strings.HasPrefix(browserBaseURL, "ws:") {
-		browserBaseURL = "http:" + browserBaseURL[3:]
-	} else if strings.HasPrefix(browserBaseURL, "wss:") {
-		browserBaseURL = "https:" + browserBaseURL[4:]
-	} else if !strings.HasPrefix(browserBaseURL, "http:") && !strings.HasPrefix(browserBaseURL, "https:") {
-		browserBaseURL = "http://" + browserBaseURL
-	}
-
-	if lastIndex := strings.LastIndex(browserBaseURL, "/devtools/"); lastIndex != -1 {
-		browserBaseURL = browserBaseURL[:lastIndex]
-	}
-
-	browserBaseURL = strings.TrimSuffix(browserBaseURL, "/")
-
+	browserBaseURL := normalizeBrowserURL(cdpProxy.GetConfig().BrowserURL)
 	frontendBaseURL := strings.TrimSuffix(cfg.FrontendURL, "/")
 
 	server := &Server{
 		router:          router,
 		cdpProxy:        cdpProxy,
-		webhookManager:  webhookManager,
 		eventDispatcher: eventDispatcher,
 		browserBaseURL:  browserBaseURL,
 		frontendBaseURL: frontendBaseURL,
@@ -67,7 +54,6 @@ func NewServer(cdpProxy *browser.CDPProxy, webhookManager webhook.Manager, event
 	}
 
 	server.setupRoutes()
-
 	return server
 }
 
@@ -85,23 +71,17 @@ func (s *Server) setupRoutes() {
 	s.router.Use(middleware.Logging)
 	s.router.Use(middleware.Recovery)
 
-	s.router.HandleFunc("/json/version", s.handleJSONVersion).Methods("GET", "POST")
-	s.router.HandleFunc("/json", s.handleJSONList).Methods("GET", "POST")
-	s.router.HandleFunc("/json/list", s.handleJSONList).Methods("GET", "POST")
-	s.router.HandleFunc("/json/new", s.handleJSONNew).Methods("GET", "POST")
-	s.router.HandleFunc("/json/activate/{targetId}", s.handleJSONActivate).Methods("GET", "POST")
-	s.router.HandleFunc("/json/close/{targetId}", s.handleJSONClose).Methods("GET", "POST")
-	s.router.HandleFunc("/json/protocol", s.handleJSONProtocol).Methods("GET", "POST")
+	cdpProxy, err := NewCDPReverseProxy(s.browserBaseURL, s.frontendBaseURL)
+	if err != nil {
+		log.Fatalf("Failed to create CDP reverse proxy: %v", err)
+	}
 
-	api := s.router.PathPrefix("/api").Subrouter()
+	s.router.PathPrefix("/json").Handler(cdpProxy)
 
-	browserHandler := browser.NewHandler(s.cdpProxy)
-	browserHandler.RegisterRoutes(api)
+	s.router.HandleFunc("/devtools/{path:.*}", s.handleWebSocket)
 
-	webhookHandler := webhook.NewHandler(s.webhookManager)
-	webhookHandler.RegisterRoutes(api)
-
-	s.router.HandleFunc("/devtools/{path:.*}", browserHandler.HandleWebSocket)
+	s.router.HandleFunc("/api/browser", s.handleBrowserInfo).Methods("GET")
+	s.router.HandleFunc("/api/clients", s.handleClients).Methods("GET")
 
 	s.router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -109,409 +89,101 @@ func (s *Server) setupRoutes() {
 	}).Methods("GET")
 }
 
-func (s *Server) handleJSONVersion(w http.ResponseWriter, r *http.Request) {
-	var reqBody io.Reader
-	if r.Body != nil {
-		reqBody = r.Body
-	}
-
-	req, err := http.NewRequest(r.Method, s.browserBaseURL+"/json/version", reqBody)
+func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error creating request: %v", err), http.StatusInternalServerError)
+		log.Printf("Error upgrading connection to WebSocket: %v", err)
 		return
 	}
 
-	for key, values := range r.Header {
-		for _, value := range values {
-			req.Header.Add(key, value)
-		}
-	}
-
-	if r.Header.Get("Content-Type") != "" {
-		req.Header.Set("Content-Type", r.Header.Get("Content-Type"))
-	}
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error connecting to browser: %v", err), http.StatusInternalServerError)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		for key, values := range resp.Header {
-			for _, value := range values {
-				w.Header().Add(key, value)
-			}
-		}
-		w.WriteHeader(resp.StatusCode)
-		io.Copy(w, resp.Body)
-		return
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error reading browser response: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		http.Error(w, fmt.Sprintf("Error parsing browser response: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	if wsURL, ok := result["webSocketDebuggerUrl"].(string); ok {
-		parsedURL, err := url.Parse(wsURL)
-		if err == nil {
-			requestHost := s.getRequestHost(r)
-			newWsURL := "ws://" + requestHost + parsedURL.Path
-			result["webSocketDebuggerUrl"] = newWsURL
-		}
-	}
-
-	for key, values := range resp.Header {
-		if key != "Content-Length" {
-			for _, value := range values {
-				w.Header().Add(key, value)
-			}
-		}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(resp.StatusCode)
-	json.NewEncoder(w).Encode(result)
-}
-
-func (s *Server) handleJSONList(w http.ResponseWriter, r *http.Request) {
-	var reqBody io.Reader
-	if r.Body != nil {
-		reqBody = r.Body
-	}
-
-	req, err := http.NewRequest(r.Method, s.browserBaseURL+"/json/list", reqBody)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error creating request: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	for key, values := range r.Header {
-		for _, value := range values {
-			req.Header.Add(key, value)
-		}
-	}
-
-	if r.Header.Get("Content-Type") != "" {
-		req.Header.Set("Content-Type", r.Header.Get("Content-Type"))
-	}
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error connecting to browser: %v", err), http.StatusInternalServerError)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		for key, values := range resp.Header {
-			for _, value := range values {
-				w.Header().Add(key, value)
-			}
-		}
-		w.WriteHeader(resp.StatusCode)
-		io.Copy(w, resp.Body)
-		return
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error reading browser response: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	var targets []map[string]interface{}
-	if err := json.Unmarshal(body, &targets); err != nil {
-		http.Error(w, fmt.Sprintf("Error parsing browser response: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	requestHost := s.getRequestHost(r)
-	for i := range targets {
-		s.rewriteWebSocketURLsWithHost(targets[i], requestHost)
-	}
-
-	for key, values := range resp.Header {
-		if key != "Content-Length" {
-			for _, value := range values {
-				w.Header().Add(key, value)
-			}
-		}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(resp.StatusCode)
-	json.NewEncoder(w).Encode(targets)
-}
-func (s *Server) handleJSONNew(w http.ResponseWriter, r *http.Request) {
-	browserURL := s.browserBaseURL + "/json/new"
-	if r.URL.RawQuery != "" {
-		browserURL += "?" + r.URL.RawQuery
-	}
-
-	var reqBody io.Reader
-	if r.Body != nil {
-		reqBody = r.Body
-	}
-
-	req, err := http.NewRequest(r.Method, browserURL, reqBody)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error creating request: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	for key, values := range r.Header {
-		for _, value := range values {
-			req.Header.Add(key, value)
-		}
-	}
-
-	if r.Header.Get("Content-Type") != "" {
-		req.Header.Set("Content-Type", r.Header.Get("Content-Type"))
-	}
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error connecting to browser: %v", err), http.StatusInternalServerError)
-		return
-	}
-	defer resp.Body.Close()
-
-	s.proxyJSONResponse(w, r, resp)
-}
-
-func (s *Server) handleJSONActivate(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	targetID := vars["targetId"]
+	path := vars["path"]
 
-	var reqBody io.Reader
-	if r.Body != nil {
-		reqBody = r.Body
-	}
+	metadata := extractClientMetadata(r)
+	metadata["path"] = path
 
-	req, err := http.NewRequest(r.Method, s.browserBaseURL+"/json/activate/"+targetID, reqBody)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error creating request: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	for key, values := range r.Header {
-		for _, value := range values {
-			req.Header.Add(key, value)
+	if strings.HasPrefix(path, "page/") {
+		parts := strings.Split(path, "/")
+		if len(parts) > 1 {
+			metadata["target_id"] = parts[1]
 		}
 	}
 
-	if r.Header.Get("Content-Type") != "" {
-		req.Header.Set("Content-Type", r.Header.Get("Content-Type"))
-	}
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	clientID, err := s.cdpProxy.AddClient(conn, metadata)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error connecting to browser: %v", err), http.StatusInternalServerError)
+		log.Printf("Error adding client: %v", err)
+		conn.Close()
 		return
 	}
-	defer resp.Body.Close()
 
-	for key, values := range resp.Header {
-		for _, value := range values {
-			w.Header().Add(key, value)
-		}
-	}
-	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	log.Printf("Client %s connected with path %s", clientID, path)
 }
 
-func (s *Server) handleJSONClose(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	targetID := vars["targetId"]
-
-	var reqBody io.Reader
-	if r.Body != nil {
-		reqBody = r.Body
-	}
-
-	req, err := http.NewRequest(r.Method, s.browserBaseURL+"/json/close/"+targetID, reqBody)
+func (s *Server) handleBrowserInfo(w http.ResponseWriter, r *http.Request) {
+	info, err := s.cdpProxy.GetInfo()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error creating request: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("Failed to get browser info: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	for key, values := range r.Header {
-		for _, value := range values {
-			req.Header.Add(key, value)
-		}
+	data := map[string]interface{}{
+		"browser": info,
+		"clients": s.cdpProxy.GetClientCount(),
+		"status":  s.cdpProxy.IsConnected(),
 	}
 
-	if r.Header.Get("Content-Type") != "" {
-		req.Header.Set("Content-Type", r.Header.Get("Content-Type"))
-	}
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error connecting to browser: %v", err), http.StatusInternalServerError)
-		return
-	}
-	defer resp.Body.Close()
-
-	for key, values := range resp.Header {
-		for _, value := range values {
-			w.Header().Add(key, value)
-		}
-	}
-	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
-}
-
-func (s *Server) handleJSONProtocol(w http.ResponseWriter, r *http.Request) {
-	var reqBody io.Reader
-	if r.Body != nil {
-		reqBody = r.Body
-	}
-
-	req, err := http.NewRequest(r.Method, s.browserBaseURL+"/json/protocol", reqBody)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error creating request: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	for key, values := range r.Header {
-		for _, value := range values {
-			req.Header.Add(key, value)
-		}
-	}
-
-	if r.Header.Get("Content-Type") != "" {
-		req.Header.Set("Content-Type", r.Header.Get("Content-Type"))
-	}
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error connecting to browser: %v", err), http.StatusInternalServerError)
-		return
-	}
-	defer resp.Body.Close()
-
-	for key, values := range resp.Header {
-		for _, value := range values {
-			w.Header().Add(key, value)
-		}
-	}
-	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
-}
-
-func (s *Server) proxyJSONResponse(w http.ResponseWriter, r *http.Request, resp *http.Response) {
-	if resp.StatusCode != http.StatusOK {
-		for key, values := range resp.Header {
-			for _, value := range values {
-				w.Header().Add(key, value)
-			}
-		}
-		w.WriteHeader(resp.StatusCode)
-		io.Copy(w, resp.Body)
-		return
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error reading browser response: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		var resultArray []map[string]interface{}
-		if err := json.Unmarshal(body, &resultArray); err != nil {
-			for key, values := range resp.Header {
-				for _, value := range values {
-					w.Header().Add(key, value)
-				}
-			}
-			w.WriteHeader(resp.StatusCode)
-			w.Write(body)
-			return
-		}
-
-		requestHost := s.getRequestHost(r)
-		for i := range resultArray {
-			s.rewriteWebSocketURLsWithHost(resultArray[i], requestHost)
-		}
-
-		for key, values := range resp.Header {
-			if key != "Content-Length" {
-				for _, value := range values {
-					w.Header().Add(key, value)
-				}
-			}
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(resp.StatusCode)
-		json.NewEncoder(w).Encode(resultArray)
-		return
-	}
-
-	requestHost := s.getRequestHost(r)
-	s.rewriteWebSocketURLsWithHost(result, requestHost)
-
-	for key, values := range resp.Header {
-		if key != "Content-Length" {
-			for _, value := range values {
-				w.Header().Add(key, value)
-			}
-		}
-	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(resp.StatusCode)
-	json.NewEncoder(w).Encode(result)
+	if err := writeJSON(w, data); err != nil {
+		log.Printf("Error writing JSON response: %v", err)
+	}
 }
 
-func (s *Server) getRequestHost(r *http.Request) string {
-	host := r.Host
-	if host == "" {
-		host = r.Header.Get("Host")
+func (s *Server) handleClients(w http.ResponseWriter, r *http.Request) {
+	clients := s.cdpProxy.GetClients()
+
+	data := map[string]interface{}{
+		"clients": clients,
+		"count":   len(clients),
 	}
-	if host == "" {
-		if parsedURL, err := url.Parse(s.frontendBaseURL); err == nil {
-			host = parsedURL.Host
-		}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := writeJSON(w, data); err != nil {
+		log.Printf("Error writing JSON response: %v", err)
 	}
-	return host
 }
 
-func (s *Server) rewriteWebSocketURLsWithHost(data map[string]interface{}, requestHost string) {
-	wsKeys := []string{"webSocketDebuggerUrl", "devtoolsFrontendUrl"}
+func normalizeBrowserURL(browserURL string) string {
+	if strings.HasPrefix(browserURL, "ws:") {
+		browserURL = "http:" + browserURL[3:]
+	} else if strings.HasPrefix(browserURL, "wss:") {
+		browserURL = "https:" + browserURL[4:]
+	} else if !strings.HasPrefix(browserURL, "http:") && !strings.HasPrefix(browserURL, "https:") {
+		browserURL = "http://" + browserURL
+	}
 
-	for _, key := range wsKeys {
-		if strVal, ok := data[key].(string); ok {
-			parsedBrowserURL, err := url.Parse(s.browserBaseURL)
-			if err == nil {
-				newVal := strings.Replace(strVal, parsedBrowserURL.Host, requestHost, -1)
+	if lastIndex := strings.LastIndex(browserURL, "/devtools/"); lastIndex != -1 {
+		browserURL = browserURL[:lastIndex]
+	}
 
-				if key == "webSocketDebuggerUrl" {
-					if strings.HasPrefix(newVal, "http:") {
-						newVal = "ws:" + newVal[5:]
-					} else if strings.HasPrefix(newVal, "https:") {
-						newVal = "wss:" + newVal[6:]
-					}
-				}
+	return strings.TrimSuffix(browserURL, "/")
+}
 
-				data[key] = newVal
-			}
+func extractClientMetadata(r *http.Request) map[string]interface{} {
+	metadata := make(map[string]interface{})
+
+	metadata["user_agent"] = r.UserAgent()
+	metadata["remote_addr"] = r.RemoteAddr
+
+	query := r.URL.Query()
+	for key, values := range query {
+		if len(values) > 0 {
+			metadata[key] = values[0]
 		}
 	}
+
+	return metadata
+}
+
+func writeJSON(w http.ResponseWriter, data interface{}) error {
+	return json.NewEncoder(w).Encode(data)
 }

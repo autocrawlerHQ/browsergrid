@@ -8,9 +8,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-
-	"browsermux/internal/cdp"
-	"browsermux/internal/events"
 )
 
 var _ ClientManager = (*CDPProxy)(nil)
@@ -20,7 +17,7 @@ var _ MessageHandler = (*CDPProxy)(nil)
 type CDPProxy struct {
 	browserConn     *websocket.Conn
 	clients         map[string]*Client
-	eventDispatcher events.Dispatcher
+	eventDispatcher EventDispatcher
 	config          CDPProxyConfig
 	browserMessages chan []byte
 	mu              sync.RWMutex
@@ -46,7 +43,7 @@ func DefaultConfig() CDPProxyConfig {
 	}
 }
 
-func NewCDPProxy(dispatcher events.Dispatcher, config CDPProxyConfig) (*CDPProxy, error) {
+func NewCDPProxy(dispatcher EventDispatcher, config CDPProxyConfig) (*CDPProxy, error) {
 	p := &CDPProxy{
 		clients:         make(map[string]*Client),
 		eventDispatcher: dispatcher,
@@ -122,10 +119,14 @@ func (p *CDPProxy) HandleClientMessage(clientID string, message []byte) error {
 }
 
 func (p *CDPProxy) HandleBrowserMessage(message []byte) error {
-	cdpMsg, err := cdp.ParseMessage(message)
-	if err == nil && cdpMsg.IsEvent() {
-		p.eventDispatcher.Dispatch(events.Event{
-			Type:       events.EventCDPEvent,
+	p.fanOut(message)
+	return nil
+}
+
+func (p *CDPProxy) fanOut(message []byte) {
+	if cdpMsg, err := ParseCDPMessage(message); err == nil && cdpMsg.IsEvent() {
+		p.eventDispatcher.Dispatch(Event{
+			Type:       EventCDPEvent,
 			Method:     cdpMsg.Method,
 			Params:     cdpMsg.Params,
 			SourceType: "browser",
@@ -144,7 +145,6 @@ func (p *CDPProxy) HandleBrowserMessage(message []byte) error {
 		}
 	}
 	p.mu.RUnlock()
-	return nil
 }
 
 func (p *CDPProxy) connectToBrowser(browserURL string) error {
@@ -159,25 +159,22 @@ func (p *CDPProxy) connectToBrowser(browserURL string) error {
 
 	p.browserConn = conn
 	p.connected = true
-
 	p.browserConn.SetReadLimit(int64(p.config.MaxMessageSize))
 
 	log.Printf("Connected to browser at %s", browserURL)
-
 	return nil
 }
 
 func (p *CDPProxy) AddClient(conn *websocket.Conn, metadata map[string]interface{}) (string, error) {
 	clientID := uuid.New().String()
-
 	client := NewClient(clientID, conn, p.eventDispatcher, p, metadata)
 
 	p.mu.Lock()
 	p.clients[clientID] = client
 	p.mu.Unlock()
 
-	p.eventDispatcher.Dispatch(events.Event{
-		Type:       events.EventClientConnected,
+	p.eventDispatcher.Dispatch(Event{
+		Type:       EventClientConnected,
 		SourceID:   clientID,
 		SourceType: "client",
 		Timestamp:  time.Now(),
@@ -203,11 +200,10 @@ func (p *CDPProxy) RemoveClient(clientID string) error {
 	}
 
 	close(client.Send)
-
 	delete(p.clients, clientID)
 
-	p.eventDispatcher.Dispatch(events.Event{
-		Type:       events.EventClientDisconnected,
+	p.eventDispatcher.Dispatch(Event{
+		Type:       EventClientDisconnected,
 		SourceID:   clientID,
 		SourceType: "client",
 		Timestamp:  time.Now(),
@@ -217,14 +213,12 @@ func (p *CDPProxy) RemoveClient(clientID string) error {
 	})
 
 	log.Printf("Removed client %s, remaining clients: %d", clientID, len(p.clients))
-
 	return nil
 }
 
 func (p *CDPProxy) GetClientCount() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-
 	return len(p.clients)
 }
 
@@ -236,7 +230,6 @@ func (p *CDPProxy) GetClients() []*ClientDTO {
 	for _, client := range p.clients {
 		clients = append(clients, client.ToModel())
 	}
-
 	return clients
 }
 
@@ -248,19 +241,20 @@ func (p *CDPProxy) Shutdown() error {
 
 	if p.browserConn != nil {
 		p.browserConn.Close()
-		p.connected = false
 	}
+	p.connected = false
 
 	for clientID, client := range p.clients {
 		if client.Connected {
-			client.Conn.Close()
+			if client.Conn != nil {
+				client.Conn.Close()
+			}
 			client.Connected = false
 		}
 		delete(p.clients, clientID)
 	}
 
 	log.Println("CDP Proxy shutdown complete")
-
 	return nil
 }
 
@@ -280,10 +274,9 @@ func (p *CDPProxy) handleClientMessages(client *Client) {
 			break
 		}
 
-		cdpMsg, err := cdp.ParseMessage(message)
-		if err == nil && cdpMsg.IsCommand() {
-			p.eventDispatcher.Dispatch(events.Event{
-				Type:       events.EventCDPCommand,
+		if cdpMsg, err := ParseCDPMessage(message); err == nil && cdpMsg.IsCommand() {
+			p.eventDispatcher.Dispatch(Event{
+				Type:       EventCDPCommand,
 				Method:     cdpMsg.Method,
 				Params:     cdpMsg.Params,
 				SourceID:   client.ID,
@@ -302,9 +295,7 @@ func (p *CDPProxy) handleClientMessages(client *Client) {
 
 func (p *CDPProxy) sendMessagesToClient(client *Client) {
 	ticker := time.NewTicker(pingPeriod)
-	defer func() {
-		ticker.Stop()
-	}()
+	defer ticker.Stop()
 
 	for {
 		select {
@@ -313,8 +304,7 @@ func (p *CDPProxy) sendMessagesToClient(client *Client) {
 				return
 			}
 
-			err := client.Conn.WriteMessage(websocket.TextMessage, message)
-			if err != nil {
+			if err := client.Conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				log.Printf("Error sending message to client %s: %v", client.ID, err)
 				return
 			}
@@ -354,7 +344,7 @@ func (p *CDPProxy) processBrowserMessages() {
 				continue
 			}
 
-			p.processBrowserMessage(message)
+			p.fanOut(message)
 		}
 	}
 }
@@ -370,36 +360,10 @@ func (p *CDPProxy) processClientMessages() {
 					log.Printf("Failed to reconnect to browser: %v", err)
 				}
 			}
-
 		case <-p.shutdown:
 			return
 		}
 	}
-}
-
-func (p *CDPProxy) processBrowserMessage(message []byte) {
-	cdpMsg, err := cdp.ParseMessage(message)
-	if err == nil && cdpMsg.IsEvent() {
-		p.eventDispatcher.Dispatch(events.Event{
-			Type:       events.EventCDPEvent,
-			Method:     cdpMsg.Method,
-			Params:     cdpMsg.Params,
-			SourceType: "browser",
-			Timestamp:  time.Now(),
-		})
-	}
-
-	p.mu.RLock()
-	for _, client := range p.clients {
-		if client.Connected {
-			select {
-			case client.Send <- message:
-			default:
-				log.Printf("Client %s message buffer full, dropping message", client.ID)
-			}
-		}
-	}
-	p.mu.RUnlock()
 }
 
 func (p *CDPProxy) reconnectToBrowser() error {
@@ -434,6 +398,5 @@ func (p *CDPProxy) reconnectToBrowser() error {
 	p.browserConn.SetReadLimit(int64(p.config.MaxMessageSize))
 
 	log.Printf("Reconnected to browser at %s", actualBrowserURL)
-
 	return nil
 }

@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-
-	"browsermux/internal/events"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -146,7 +144,7 @@ func TestCDPProxyClientManagement(t *testing.T) {
 		}
 	})
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	server := createWebSocketTestServer()
 	defer server.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
@@ -191,7 +189,7 @@ func TestCDPProxyClientManagement(t *testing.T) {
 
 		connectEvents := 0
 		for _, event := range dispatcher.events {
-			if event.Type == events.EventClientConnected {
+			if event.Type == EventClientConnected {
 				connectEvents++
 			}
 		}
@@ -211,7 +209,7 @@ func TestCDPProxyClientManagement(t *testing.T) {
 
 			disconnectEvents := 0
 			for _, event := range dispatcher.events {
-				if event.Type == events.EventClientDisconnected {
+				if event.Type == EventClientDisconnected {
 					disconnectEvents++
 				}
 			}
@@ -303,7 +301,7 @@ func TestCDPProxyHandleBrowserMessage(t *testing.T) {
 
 		eventFound := false
 		for _, event := range dispatcher.events {
-			if event.Type == events.EventCDPEvent && event.Method == "Page.loadEventFired" {
+			if event.Type == EventCDPEvent && event.Method == "Page.loadEventFired" {
 				eventFound = true
 				break
 			}
@@ -333,7 +331,7 @@ func TestCDPProxyHandleBrowserMessage(t *testing.T) {
 		}
 
 		for _, event := range dispatcher.events {
-			if event.Type == events.EventCDPEvent {
+			if event.Type == EventCDPEvent {
 				t.Error("Should not dispatch CDP event for non-event messages")
 			}
 		}
@@ -381,7 +379,7 @@ func TestCDPProxyShutdown(t *testing.T) {
 		t.Errorf("Expected all clients to be removed after shutdown, got %d", len(proxy.clients))
 	}
 
-	if !client.Connected {
+	if client.Connected {
 		t.Error("Client connection should be marked as disconnected")
 	}
 }
@@ -389,7 +387,7 @@ func TestCDPProxyShutdown(t *testing.T) {
 func TestCDPProxyDisconnect(t *testing.T) {
 	dispatcher := &mockDispatcher{}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	server := createWebSocketTestServer()
 	defer server.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")

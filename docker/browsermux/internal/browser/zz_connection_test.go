@@ -226,7 +226,6 @@ func TestTestBrowserConnection(t *testing.T) {
 	})
 
 	t.Run("Connection Timeout", func(t *testing.T) {
-		// Use a non-routable IP address to ensure timeout
 		err := TestBrowserConnection("ws://192.0.2.1:9999/devtools/browser", 100*time.Millisecond)
 		if err == nil {
 			t.Fatal("Expected error for connection timeout")

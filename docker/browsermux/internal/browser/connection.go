@@ -106,6 +106,12 @@ func replaceHostPort(originalURL string, newHost string) string {
 		return originalURL
 	}
 
+	// Only replace the host if the original URL actually has a host component
+	// This prevents malformed URLs when dealing with relative paths or invalid URLs
+	if parsedURL.Host == "" {
+		return originalURL
+	}
+
 	parsedURL.Host = newHost
 
 	return parsedURL.String()

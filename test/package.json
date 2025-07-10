@@ -1,0 +1,16 @@
+{
+  "name": "browsermux-test",
+  "version": "1.0.0",
+  "description": "Test scripts for BrowserMux connectivity",
+  "main": "connect.js",
+  "scripts": {
+    "test": "node connect.js",
+    "test:custom": "node connect.js"
+  },
+  "dependencies": {
+    "puppeteer": "^21.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+} 

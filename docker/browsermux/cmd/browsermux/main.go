@@ -12,8 +12,6 @@ import (
 	"browsermux/internal/api"
 	"browsermux/internal/browser"
 	"browsermux/internal/config"
-	"browsermux/internal/events"
-	"browsermux/internal/webhook"
 )
 
 func main() {
@@ -21,24 +19,20 @@ func main() {
 
 	cfg := loadConfig()
 
-	dispatcher := events.NewDispatcher()
-
-	webhookManager := webhook.NewManager(dispatcher)
-
-	registerWebhookHandlers(dispatcher, webhookManager)
-
 	cdpProxyConfig := browser.CDPProxyConfig{
 		BrowserURL:        cfg.BrowserURL,
 		MaxMessageSize:    cfg.MaxMessageSize,
 		ConnectionTimeout: time.Duration(cfg.ConnectionTimeoutSeconds) * time.Second,
 	}
 
+	dispatcher := browser.NewEventDispatcher()
+
 	cdpProxy, err := browser.NewCDPProxy(dispatcher, cdpProxyConfig)
 	if err != nil {
 		log.Fatalf("Failed to create CDP Proxy: %v", err)
 	}
 
-	server := api.NewServer(cdpProxy, webhookManager, dispatcher, cfg.Port, cfg)
+	server := api.NewServer(cdpProxy, dispatcher, cfg.Port, cfg)
 
 	go func() {
 		if err := server.Start(); err != nil && err != http.ErrServerClosed {
@@ -73,43 +67,4 @@ func loadConfig() *config.Config {
 		return config.DefaultConfig()
 	}
 	return cfg
-}
-
-func registerWebhookHandlers(dispatcher events.Dispatcher, manager webhook.Manager) {
-	dispatcher.Register(events.EventCDPCommand, func(event events.Event) {
-		manager.TriggerWebhooks(
-			event.Method,
-			event.Params,
-			event.SourceID,
-			webhook.WebhookTimingBeforeEvent,
-		)
-	})
-
-	dispatcher.Register(events.EventCDPEvent, func(event events.Event) {
-		clientID := ""
-		if event.SourceType == "client" {
-			clientID = event.SourceID
-		}
-
-		manager.TriggerWebhooks(
-			event.Method,
-			event.Params,
-			clientID,
-			webhook.WebhookTimingAfterEvent,
-		)
-	})
-
-	dispatcher.Register(events.EventClientConnected, func(event events.Event) {
-		clientID := ""
-		if id, ok := event.Params["client_id"].(string); ok {
-			clientID = id
-		}
-
-		manager.TriggerWebhooks(
-			"client.connected",
-			event.Params,
-			clientID,
-			webhook.WebhookTimingAfterEvent,
-		)
-	})
 }

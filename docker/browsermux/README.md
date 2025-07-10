@@ -1,149 +1,160 @@
-# BrowserMux API Documentation
+# BrowserMux - Elegant Chrome DevTools Protocol Proxy
 
-BrowserMux is a Chrome DevTools Protocol (CDP) proxy that allows multiple clients to connect to a single browser instance. It provides an API for managing webhooks that can be triggered on browser events.
+BrowserMux is a minimalist, high-performance Chrome DevTools Protocol (CDP) proxy that enables multiple clients to connect to a single browser instance with clean, efficient code.
 
-## Overview
+## Architecture
 
-The BrowserMux API is divided into several areas:
+BrowserMux follows a clean, layered architecture:
 
-1. **CDP Proxy** - Standard Chrome DevTools Protocol endpoints for browser interaction
-2. **Browser API** - Endpoints for browser information and client management
-3. **Webhook API** - CRUD operations for managing webhooks
-4. **Health Check** - Simple endpoint to check service health
+### Core Components
 
-## Base URL
+1. **CDP Proxy** (`internal/browser/proxy.go`) - The heart of the system
+   - Manages browser connections with automatic reconnection
+   - Handles client lifecycle with graceful cleanup
+   - Broadcasts messages efficiently using a single `fanOut` method
+   - Dispatches events for monitoring and debugging
 
-All API endpoints are served from the root URL of the BrowserMux service.
+2. **HTTP API** (`internal/api/server.go`) - Lightweight HTTP interface
+   - Uses `httputil.ReverseProxy` for all CDP endpoints (eliminates ~300 lines of duplicate code)
+   - Automatically rewrites WebSocket URLs for proper routing (fixes port mapping issues in Docker)
+   - Provides browser status and client management endpoints
 
-## CDP Proxy Endpoints
+3. **Event System** (`internal/browser/types.go`) - Simple event dispatcher
+   - Streamlined interface without unnecessary handler IDs
+   - Supports wildcard event listeners
+   - Async event processing for performance
 
-These endpoints implement the standard Chrome DevTools Protocol HTTP interface:
+## Key Features
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/json/version` | GET, POST | Get browser version information |
-| `/json` or `/json/list` | GET, POST | List available targets/pages |
-| `/json/new` | GET, POST | Create a new target/page |
-| `/json/activate/{targetId}` | GET, POST | Activate a specific target |
-| `/json/close/{targetId}` | GET, POST | Close a specific target |
-| `/json/protocol` | GET, POST | Get the DevTools Protocol definition |
-| `/devtools/{path}` | WebSocket | WebSocket endpoint for CDP connections |
+- **Minimal Code**: Elegant implementation with no unnecessary abstractions
+- **High Performance**: Efficient message broadcasting and connection management
+- **Auto-Reconnection**: Robust browser connection handling with automatic recovery
+- **Standard Compliance**: Full Chrome DevTools Protocol compatibility
+- **Easy Configuration**: Environment variables or JSON config file
 
-## Browser API Endpoints
+## API Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/browser` | GET | Get information about the connected browser |
-| `/api/clients` | GET | List all connected clients |
+### Chrome DevTools Protocol (Proxied)
+All standard CDP endpoints are automatically proxied through `httputil.ReverseProxy`:
 
-### Response Examples
+- `/json/version` - Browser version information
+- `/json` or `/json/list` - List available targets/pages
+- `/json/new` - Create new target/page
+- `/json/activate/{targetId}` - Activate target
+- `/json/close/{targetId}` - Close target
+- `/json/protocol` - Get protocol definition
 
-#### GET `/api/browser`
+### WebSocket Connections
+- `/devtools/{path}` - WebSocket endpoint for CDP communication
 
-```json
-{
-  "browser": {
-    "version": "Chrome/91.0.4472.124",
-    "protocol": "1.3"
-  },
-  "clients": 2,
-  "status": true
-}
-```
-
-#### GET `/api/clients`
-
-```json
-{
-  "clients": [
-    {
-      "id": "client-123",
-      "connected_at": "2023-03-17T10:20:30Z"
-    },
-    {
-      "id": "client-456",
-      "connected_at": "2023-03-17T11:25:15Z"
-    }
-  ],
-  "count": 2
-}
-```
-
-## Webhook API Endpoints
-
-Webhooks allow you to receive HTTP callbacks when certain browser events occur.
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/webhooks` | POST | Create a new webhook |
-| `/api/webhooks` | GET | List all registered webhooks |
-| `/api/webhooks/{id}` | GET | Get a specific webhook |
-| `/api/webhooks/{id}` | PUT | Update a webhook |
-| `/api/webhooks/{id}` | DELETE | Delete a webhook |
-| `/api/webhook-executions` | GET | List webhook execution history |
-| `/api/webhook-executions/{id}` | GET | Get details of a specific execution |
-| `/api/webhooks/test` | POST | Test a webhook |
-
-### Webhook Configuration
-
-Webhooks can be configured to trigger either before or after CDP events.
-
-```json
-{
-  "name": "Page Load Webhook",
-  "url": "https://example.com/webhook",
-  "event_method": "Page.loadEventFired",
-  "timing": "after_event",
-  "headers": {
-    "Authorization": "Bearer token123"
-  },
-  "timeout": 5000,
-  "max_retries": 3,
-  "enabled": true
-}
-```
-
-### Webhook Timing Options
-
-- `before_event`: Triggered before a CDP command is sent to the browser
-- `after_event`: Triggered after a CDP event is received from the browser
-
-### Testing a Webhook
-
-```json
-{
-  "webhook_id": "webhook-123",
-  "client_id": "client-456",
-  "cdp_method": "Page.loadEventFired",
-  "cdp_params": {}
-}
-```
-
-## Health Check
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Returns 200 OK if the service is healthy |
+### Management API
+- `/api/browser` - Browser information and status
+- `/api/clients` - Connected clients information
+- `/health` - Health check endpoint
 
 ## Configuration
 
-BrowserMux can be configured using environment variables:
+Configure via environment variables:
 
-- `BROWSER_URL`: WebSocket URL of the browser (default: `ws://localhost:6100/devtools/browser`)
-- `PORT`: Port to listen on (default: `8080`)
-- `MAX_MESSAGE_SIZE`: Maximum size of WebSocket messages in bytes (default: `1048576`)
-- `CONNECTION_TIMEOUT`: Timeout for browser connections in seconds (default: `10`)
+```bash
+# Required
+BROWSER_URL=ws://localhost:9222/devtools/browser
 
-## WebSocket Connections
+# Optional
+PORT=8080
+FRONTEND_URL=http://localhost:80
+MAX_MESSAGE_SIZE=1048576
+CONNECTION_TIMEOUT_SECONDS=10
+```
 
-Clients can connect to the `/devtools/{path}` WebSocket endpoint to communicate with the browser using the Chrome DevTools Protocol. All messages are forwarded to the browser, and responses are sent back to the client.
+Or use a JSON config file:
 
-## Event System
+```json
+{
+  "port": "8080",
+  "browser_url": "ws://localhost:9222/devtools/browser",
+  "frontend_url": "http://localhost:80",
+  "max_message_size": 1048576,
+  "connection_timeout_seconds": 10
+}
+```
 
-BrowserMux includes an event system that dispatches events when:
+## Usage
 
-1. CDP commands are sent to the browser
-2. CDP events are received from the browser
-3. Clients connect or disconnect
+### Basic Usage
 
-These events can trigger webhooks based on the configured event methods and timing. 
+```bash
+# Start with default configuration
+./browsermux
+
+# Start with custom browser URL
+BROWSER_URL=ws://chrome:9222/devtools/browser ./browsermux
+
+# Start with config file
+CONFIG_PATH=config.json ./browsermux
+```
+
+### Docker Usage
+
+```bash
+# Build and run
+docker build -t browsermux .
+docker run -p 8080:8080 -e BROWSER_URL=ws://chrome:9222/devtools/browser browsermux
+```
+
+## Development
+
+### Building
+
+```bash
+go build ./cmd/browsermux
+```
+
+### Testing
+
+```bash
+go test ./...
+```
+
+### Code Structure
+
+The codebase is organized for clarity and maintainability:
+
+```
+cmd/browsermux/          # Application entry point
+internal/
+  ├── api/               # HTTP server and reverse proxy
+  ├── browser/           # CDP proxy and client management
+  ├── config/            # Configuration management
+  └── api/middleware/    # HTTP middleware
+```
+
+## Performance
+
+BrowserMux is designed for efficiency:
+
+- **Single Message Broadcast**: Uses one `fanOut` method for all message distribution
+- **Reverse Proxy**: Eliminates duplicate HTTP handling code
+- **Efficient Locking**: Minimal lock contention with read-write mutexes
+- **Async Events**: Non-blocking event processing
+- **Connection Pooling**: Efficient WebSocket connection management
+
+## Monitoring
+
+BrowserMux provides built-in monitoring through its event system:
+
+```go
+// Register event handlers
+dispatcher.Register(browser.EventClientConnected, func(event browser.Event) {
+    log.Printf("Client connected: %s", event.SourceID)
+})
+
+dispatcher.Register(browser.EventCDPCommand, func(event browser.Event) {
+    log.Printf("CDP command: %s", event.Method)
+})
+```
+
+## License
+
+[Your License Here]
+

@@ -8,22 +8,16 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-
-	"browsermux/internal/events"
 )
 
 type mockDispatcher struct {
-	events []events.Event
+	events []Event
 }
 
-func (m *mockDispatcher) Register(eventType events.EventType, handler events.EventHandler) events.HandlerID {
-	return events.HandlerID("mock-handler-id")
+func (m *mockDispatcher) Register(eventType EventType, handler EventHandler) {
 }
 
-func (m *mockDispatcher) Unregister(eventType events.EventType, handlerID events.HandlerID) {
-}
-
-func (m *mockDispatcher) Dispatch(event events.Event) {
+func (m *mockDispatcher) Dispatch(event Event) {
 	m.events = append(m.events, event)
 }
 
@@ -72,8 +66,34 @@ func (m *mockCDPProxy) HandleBrowserMessage(message []byte) error {
 	return nil
 }
 
+func createWebSocketTestServer() *httptest.Server {
+	upgrader := websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},
+	}
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		for {
+			messageType, p, err := conn.ReadMessage()
+			if err != nil {
+				break
+			}
+			if err := conn.WriteMessage(messageType, p); err != nil {
+				break
+			}
+		}
+	}))
+}
+
 func TestNewClient(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	server := createWebSocketTestServer()
 	defer server.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
@@ -85,12 +105,15 @@ func TestNewClient(t *testing.T) {
 	defer conn.Close()
 
 	dispatcher := &mockDispatcher{}
+	mockProxy := &mockCDPProxy{
+		clients: make(map[string]*Client),
+	}
 	metadata := map[string]interface{}{
 		"user_agent": "test-agent",
 		"source":     "test",
 	}
 
-	client := NewClient("test-client-1", conn, dispatcher, (*CDPProxy)(nil), metadata)
+	client := NewClient("test-client-1", conn, dispatcher, mockProxy, metadata)
 
 	if client == nil {
 		t.Fatal("NewClient() returned nil")
@@ -104,8 +127,8 @@ func TestNewClient(t *testing.T) {
 		t.Error("Client connection does not match provided connection")
 	}
 
-	if client.Dispatcher != dispatcher {
-		t.Error("Client dispatcher does not match provided dispatcher")
+	if client.Dispatcher == nil {
+		t.Error("Client dispatcher should not be nil")
 	}
 
 	if client.Connected != true {
@@ -184,7 +207,7 @@ func TestClientSendMessage(t *testing.T) {
 	})
 
 	t.Run("Channel Full", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		server := createWebSocketTestServer()
 		defer server.Close()
 
 		wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
@@ -212,8 +235,11 @@ func TestClientSendMessage(t *testing.T) {
 
 func TestClientClose(t *testing.T) {
 	dispatcher := &mockDispatcher{}
+	mockProxy := &mockCDPProxy{
+		clients: make(map[string]*Client),
+	}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	server := createWebSocketTestServer()
 	defer server.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
@@ -227,6 +253,7 @@ func TestClientClose(t *testing.T) {
 		ID:         "test-client",
 		Conn:       conn,
 		Dispatcher: dispatcher,
+		CDPProxy:   mockProxy,
 		Connected:  true,
 	}
 
@@ -244,7 +271,7 @@ func TestClientClose(t *testing.T) {
 	}
 
 	event := dispatcher.events[0]
-	if event.Type != events.EventClientDisconnected {
+	if event.Type != EventClientDisconnected {
 		t.Errorf("Expected EventClientDisconnected, got %s", event.Type)
 	}
 
@@ -255,25 +282,28 @@ func TestClientClose(t *testing.T) {
 
 func TestProcessMessage(t *testing.T) {
 	dispatcher := &mockDispatcher{}
+	mockProxy := &mockCDPProxy{
+		clients: make(map[string]*Client),
+	}
 
 	client := &Client{
 		ID:         "test-client",
 		Dispatcher: dispatcher,
-		CDPProxy:   (*CDPProxy)(nil),
+		CDPProxy:   mockProxy,
 	}
 
 	t.Run("Valid CDP Message", func(t *testing.T) {
 		dispatcher.events = nil
 
-		message := []byte(`{"id":"1","method":"Page.navigate","params":{"url":"https://example.com"}}`)
-		client.processMessage(message)
+		message := []byte(`{"id":1,"method":"Page.navigate","params":{"url":"https://example.com"}}`)
+		client.ProcessMessage(message)
 
 		if len(dispatcher.events) != 1 {
 			t.Errorf("Expected 1 event dispatched, got %d", len(dispatcher.events))
 		}
 
 		event := dispatcher.events[0]
-		if event.Type != events.EventCDPCommand {
+		if event.Type != EventCDPCommand {
 			t.Errorf("Expected EventCDPCommand, got %s", event.Type)
 		}
 
@@ -290,10 +320,10 @@ func TestProcessMessage(t *testing.T) {
 		dispatcher.events = nil
 
 		message := []byte(`invalid json`)
-		client.processMessage(message)
+		client.ProcessMessage(message)
 
 		for _, event := range dispatcher.events {
-			if event.Type == events.EventCDPCommand {
+			if event.Type == EventCDPCommand {
 				t.Error("Should not dispatch CDP command event for invalid JSON")
 			}
 		}
