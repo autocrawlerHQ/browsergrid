@@ -65,7 +65,7 @@ func main() {
 	mux.HandleFunc(tasks.TypeSessionStart, handleSessionStart(sessStore, prov))
 	mux.HandleFunc(tasks.TypeSessionStop, handleSessionStop(sessStore, prov))
 	mux.HandleFunc(tasks.TypeSessionHealthCheck, handleSessionHealthCheck(sessStore, prov))
-	mux.HandleFunc(tasks.TypeSessionTimeout, handleSessionTimeout(sessStore, prov))
+	mux.HandleFunc(tasks.TypeSessionTimeout, handleSessionTimeout(sessStore, prov, cfg.RedisAddr))
 
 	log.Printf("[WORKER] Starting worker...")
 	log.Printf("[WORKER] └── Name: %s", cfg.Name)
@@ -253,7 +253,7 @@ func handleSessionHealthCheck(store *sessions.Store, prov provider.Provisioner) 
 	}
 }
 
-func handleSessionTimeout(store *sessions.Store, prov provider.Provisioner) asynq.HandlerFunc {
+func handleSessionTimeout(store *sessions.Store, prov provider.Provisioner, redisAddr string) asynq.HandlerFunc {
 	return func(ctx context.Context, t *asynq.Task) error {
 		var payload tasks.SessionTimeoutPayload
 		if err := payload.Unmarshal(t.Payload()); err != nil {
@@ -262,7 +262,7 @@ func handleSessionTimeout(store *sessions.Store, prov provider.Provisioner) asyn
 
 		log.Printf("[TIMEOUT] Session %s has reached its maximum duration", payload.SessionID)
 
-		client := asynq.NewClient(asynq.RedisClientOpt{Addr: os.Getenv("REDIS_ADDR")})
+		client := asynq.NewClient(asynq.RedisClientOpt{Addr: redisAddr})
 		defer client.Close()
 
 		stopPayload := tasks.SessionStopPayload{

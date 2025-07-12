@@ -291,7 +291,7 @@ migrate:
 		echo "Error: DATABASE_URL environment variable is required"; \
 		exit 1; \
 	fi
-	@atlas migrate apply --dir file://browsergrid/migrations --url "$(DATABASE_URL)" --verbose
+	@atlas migrate apply --dir file://browsergrid/migrations --url "$(DATABASE_URL)"
 
 # Show migration status
 migrate-status:

@@ -99,7 +99,7 @@ func main() {
 	}()
 	defer schedulerSvc.Stop()
 
-	reconciler := poolmgr.NewReconciler(database.DB, taskClient)
+	reconciler := poolmgr.NewReconciler(database.DB, taskClient, redisOpt)
 	reconcilerCtx, reconcilerCancel := context.WithCancel(ctx)
 	defer reconcilerCancel()
 

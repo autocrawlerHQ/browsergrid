@@ -129,15 +129,19 @@ func setupTestRedisClient(t *testing.T) *asynq.Client {
 	return client
 }
 
-func TestNewReconciler(t *testing.T) {
+func setupTestReconciler(t *testing.T) *Reconciler {
 	db := setupTestDB(t)
 	client := setupTestRedisClient(t)
-	defer client.Close()
+	redisOpt := asynq.RedisClientOpt{Addr: testRedisAddr}
+	return NewReconciler(db, client, redisOpt)
+}
 
-	reconciler := NewReconciler(db, client)
+func TestNewReconciler(t *testing.T) {
+	reconciler := setupTestReconciler(t)
+	defer reconciler.taskClient.Close()
 
 	assert.NotNil(t, reconciler)
-	assert.Equal(t, db, reconciler.db)
+	assert.NotNil(t, reconciler.db)
 	assert.NotNil(t, reconciler.wpStore)
 	assert.NotNil(t, reconciler.sessStore)
 	assert.NotNil(t, reconciler.taskClient)
@@ -145,11 +149,8 @@ func TestNewReconciler(t *testing.T) {
 }
 
 func TestReconciler_CountSessionsByStatus(t *testing.T) {
-	db := setupTestDB(t)
-	client := setupTestRedisClient(t)
-	defer client.Close()
-
-	reconciler := NewReconciler(db, client)
+	reconciler := setupTestReconciler(t)
+	defer reconciler.taskClient.Close()
 	ctx := context.Background()
 
 	pool := &workpool.WorkPool{
@@ -204,11 +205,8 @@ func TestReconciler_CountSessionsByStatus(t *testing.T) {
 }
 
 func TestReconciler_ReconcilePool(t *testing.T) {
-	db := setupTestDB(t)
-	client := setupTestRedisClient(t)
-	defer client.Close()
-
-	reconciler := NewReconciler(db, client)
+	reconciler := setupTestReconciler(t)
+	defer reconciler.taskClient.Close()
 	ctx := context.Background()
 
 	inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: testRedisAddr})
@@ -307,20 +305,17 @@ func TestReconciler_ReconcilePool(t *testing.T) {
 				assert.Equal(t, tt.expectedSessions, scalePayload.DesiredSessions)
 			}
 
-			err = db.Where("work_pool_id = ?", tt.pool.ID).Delete(&sessions.Session{}).Error
+			err = reconciler.db.Where("work_pool_id = ?", tt.pool.ID).Delete(&sessions.Session{}).Error
 			require.NoError(t, err)
-			err = db.Delete(tt.pool).Error
+			err = reconciler.db.Delete(tt.pool).Error
 			require.NoError(t, err)
 		})
 	}
 }
 
 func TestReconciler_HandleIdleSessions(t *testing.T) {
-	db := setupTestDB(t)
-	client := setupTestRedisClient(t)
-	defer client.Close()
-
-	reconciler := NewReconciler(db, client)
+	reconciler := setupTestReconciler(t)
+	defer reconciler.taskClient.Close()
 	ctx := context.Background()
 
 	inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: testRedisAddr})
@@ -376,7 +371,7 @@ func TestReconciler_GetPoolStats(t *testing.T) {
 	client := setupTestRedisClient(t)
 	defer client.Close()
 
-	reconciler := NewReconciler(db, client)
+	reconciler := NewReconciler(db, client, asynq.RedisClientOpt{Addr: testRedisAddr})
 	ctx := context.Background()
 
 	pool := &workpool.WorkPool{
@@ -434,7 +429,7 @@ func TestReconciler_GetPoolStats_NonExistentPool(t *testing.T) {
 	client := setupTestRedisClient(t)
 	defer client.Close()
 
-	reconciler := NewReconciler(db, client)
+	reconciler := NewReconciler(db, client, asynq.RedisClientOpt{Addr: testRedisAddr})
 	ctx := context.Background()
 
 	nonExistentID := uuid.New()
@@ -448,7 +443,7 @@ func TestReconciler_Start_StopOnContext(t *testing.T) {
 	client := setupTestRedisClient(t)
 	defer client.Close()
 
-	reconciler := NewReconciler(db, client)
+	reconciler := NewReconciler(db, client, asynq.RedisClientOpt{Addr: testRedisAddr})
 	reconciler.tickInterval = 100 * time.Millisecond
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
@@ -463,7 +458,7 @@ func TestReconciler_ScheduleCleanupTasks(t *testing.T) {
 	client := setupTestRedisClient(t)
 	defer client.Close()
 
-	reconciler := NewReconciler(db, client)
+	reconciler := NewReconciler(db, client, asynq.RedisClientOpt{Addr: testRedisAddr})
 
 	err := reconciler.scheduleCleanupTasks()
 	assert.NoError(t, err)

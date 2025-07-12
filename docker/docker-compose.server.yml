@@ -51,6 +51,7 @@ services:
       - BROWSERGRID_ENV=dev
       - BROWSERGRID_POSTGRES_HOST=db
       - BROWSERGRID_POSTGRES_PORT=5432
+      - REDIS_ADDR=redis:6379
     depends_on:
       db:
         condition: service_healthy
@@ -75,6 +76,7 @@ services:
     environment:
       - BROWSERGRID_POSTGRES_HOST=db
       - BROWSERGRID_POSTGRES_PORT=5432
+      - REDIS_ADDR=redis:6379
       # - BROWSERGRID_WORKER_POOL_ID=${BROWSERGRID_WORKER_POOL_ID}  # Optional - will create default pool
       - BROWSERGRID_WORKER_NAME=${BROWSERGRID_WORKER_NAME:-worker-docker}
       - BROWSERGRID_WORKER_PROVIDER=${BROWSERGRID_WORKER_PROVIDER:-docker}

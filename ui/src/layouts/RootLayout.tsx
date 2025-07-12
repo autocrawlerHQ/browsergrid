@@ -12,6 +12,7 @@ import {
   Globe, 
   Layers, 
   ListTodo, 
+  //Clock,
   Webhook 
 } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
@@ -23,6 +24,7 @@ const tabItems = [
   { id: 'sessions', label: 'Browser Sessions', icon: Globe, path: '/sessions' },
   { id: 'workpools', label: 'Work Pools', icon: Layers, path: '/workpools' },
   { id: 'queue', label: 'Queue', icon: ListTodo, path: '/queue' },
+  //{ id: 'scheduled-tasks', label: 'Scheduled Tasks', icon: Clock, path: '/scheduled-tasks' },
   { id: 'webhooks', label: 'Webhooks', icon: Webhook, path: '/webhooks' }
 ]
 

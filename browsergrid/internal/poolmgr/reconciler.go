@@ -24,12 +24,13 @@ type Reconciler struct {
 	tickInterval time.Duration
 }
 
-func NewReconciler(db *gorm.DB, taskClient *asynq.Client) *Reconciler {
+func NewReconciler(db *gorm.DB, taskClient *asynq.Client, redisOpt asynq.RedisClientOpt) *Reconciler {
 	return &Reconciler{
 		db:           db,
 		wpStore:      workpool.NewStore(db),
 		sessStore:    sessions.NewStore(db),
 		taskClient:   taskClient,
+		redisOpt:     redisOpt,
 		tickInterval: 30 * time.Second,
 	}
 }
