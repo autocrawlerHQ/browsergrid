@@ -59,6 +59,8 @@ services:
       - "${BROWSERGRID_API_PORT:-8765}:8765"
     networks:
       - browsergrid_server
+    volumes:
+      - profile_data:/var/lib/browsergrid/profiles
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8765/health"]
       interval: 10s
@@ -91,6 +93,7 @@ services:
       - browsergrid_server
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock  # For Docker provider
+      - profile_data:/var/lib/browsergrid/profiles  # Shared profile storage
     restart: unless-stopped
 
   prometheus:
@@ -138,4 +141,5 @@ networks:
 
 volumes:
   postgres_data:
-  prometheus_data: 
+  prometheus_data:
+  profile_data: 

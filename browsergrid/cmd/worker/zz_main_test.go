@@ -22,6 +22,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"github.com/autocrawlerHQ/browsergrid/internal/profiles"
 	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
 	"github.com/autocrawlerHQ/browsergrid/internal/tasks"
 	"github.com/autocrawlerHQ/browsergrid/internal/workpool"
@@ -379,6 +380,9 @@ func TestHandleSessionStop(t *testing.T) {
 	db := setupTestDB(t)
 	sessStore := sessions.NewStore(db)
 	mockProvider := NewMockProvider()
+	profileStore := profiles.NewStore(db)
+	localProfileStore, err := profiles.NewLocalProfileStore("")
+	require.NoError(t, err)
 
 	ctx := context.Background()
 
@@ -449,7 +453,7 @@ func TestHandleSessionStop(t *testing.T) {
 
 			mockProvider.StopCalled = false
 
-			handler := handleSessionStop(sessStore, mockProvider)
+			handler := handleSessionStop(sessStore, mockProvider, profileStore, localProfileStore)
 
 			payload := tasks.SessionStopPayload{
 				SessionID: tt.session.ID,

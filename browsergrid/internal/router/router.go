@@ -1,14 +1,19 @@
 package router
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
 	"github.com/autocrawlerHQ/browsergrid/internal/db"
 	"github.com/autocrawlerHQ/browsergrid/internal/poolmgr"
+	"github.com/autocrawlerHQ/browsergrid/internal/profiles"
 	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
 	"github.com/autocrawlerHQ/browsergrid/internal/workpool"
 )
@@ -50,18 +55,56 @@ func New(database *db.DB, reconciler *poolmgr.Reconciler, taskClient *asynq.Clie
 	{
 		poolAdapter := workpool.NewAdapter(database.DB)
 
+		// Initialize profiles
+		profileStore := profiles.NewStore(database.DB)
+		localProfileStore, err := profiles.NewLocalProfileStore("")
+		if err != nil {
+			panic("failed to initialize profile store: " + err.Error())
+		}
+
+		// Create profile service adapter
+		profileService := &profileServiceAdapter{
+			store: profileStore,
+		}
+
 		sessionDeps := sessions.Dependencies{
-			DB:         database.DB,
-			PoolSvc:    poolAdapter,
-			TaskClient: taskClient,
+			DB:           database.DB,
+			PoolSvc:      poolAdapter,
+			TaskClient:   taskClient,
+			ProfileSvc:   profileService,
+			ProfileStore: profileStore,
 		}
 		sessions.RegisterRoutes(v1, sessionDeps)
+
+		profileDeps := profiles.Dependencies{
+			DB:           database.DB,
+			Store:        profileStore,
+			ProfileStore: localProfileStore,
+		}
+		profiles.RegisterRoutes(v1, profileDeps)
 
 		workpool.RegisterRoutes(v1, database.DB)
 
 		poolmgr.RegisterRoutes(v1, reconciler)
-
 	}
 
 	return r
+}
+
+// profileServiceAdapter adapts the profiles store to the sessions ProfileService interface
+type profileServiceAdapter struct {
+	store *profiles.Store
+}
+
+func (p *profileServiceAdapter) ValidateProfile(ctx context.Context, profileID uuid.UUID, browser sessions.Browser) error {
+	profile, err := p.store.GetProfile(ctx, profileID)
+	if err != nil {
+		return err
+	}
+
+	if profile.Browser != browser {
+		return fmt.Errorf("profile browser type %s does not match session browser type %s", profile.Browser, browser)
+	}
+
+	return nil
 }

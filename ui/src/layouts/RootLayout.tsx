@@ -13,7 +13,8 @@ import {
   Layers, 
   ListTodo, 
   //Clock,
-  Webhook 
+  Webhook,
+  User
 } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -22,6 +23,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 const tabItems = [
   { id: 'overview', label: 'Overview', icon: LayoutGrid, path: '/' },
   { id: 'sessions', label: 'Browser Sessions', icon: Globe, path: '/sessions' },
+  { id: 'profiles', label: 'Profiles', icon: User, path: '/profiles' },
   { id: 'workpools', label: 'Work Pools', icon: Layers, path: '/workpools' },
   { id: 'queue', label: 'Queue', icon: ListTodo, path: '/queue' },
   //{ id: 'scheduled-tasks', label: 'Scheduled Tasks', icon: Clock, path: '/scheduled-tasks' },

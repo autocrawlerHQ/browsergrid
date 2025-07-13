@@ -1,3 +1,19 @@
+-- Create "profiles" table
+CREATE TABLE "public"."profiles" (
+  "id" uuid NOT NULL DEFAULT gen_random_uuid(),
+  "name" text NOT NULL,
+  "description" text NULL,
+  "browser" text NOT NULL,
+  "size_bytes" bigint NULL DEFAULT 0,
+  "storage_backend" text NULL DEFAULT 'docker_volume',
+  "metadata" jsonb NULL DEFAULT '{}',
+  "created_at" timestamptz NOT NULL DEFAULT now(),
+  "updated_at" timestamptz NOT NULL DEFAULT now(),
+  "last_used_at" timestamptz NULL,
+  PRIMARY KEY ("id")
+);
+-- Create index "idx_profiles_name" to table: "profiles"
+CREATE INDEX "idx_profiles_name" ON "public"."profiles" ("name");
 -- Create "session_pools" table
 CREATE TABLE "public"."session_pools" (
   "id" text NOT NULL,
@@ -44,6 +60,7 @@ CREATE TABLE "public"."sessions" (
   "ws_endpoint" text NULL,
   "live_url" text NULL,
   "work_pool_id" text NULL,
+  "profile_id" text NULL,
   "pool_id" text NULL,
   "is_pooled" boolean NULL,
   "claimed_at" timestamptz NULL,

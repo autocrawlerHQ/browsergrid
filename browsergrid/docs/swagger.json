@@ -215,6 +215,383 @@
                 }
             }
         },
+        "/api/v1/profiles": {
+            "get": {
+                "description": "Get a paginated list of browser profiles",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "profiles"
+                ],
+                "summary": "List profiles",
+                "parameters": [
+                    {
+                        "enum": [
+                            "chrome",
+                            "chromium",
+                            "firefox",
+                            "edge",
+                            "webkit",
+                            "safari"
+                        ],
+                        "type": "string",
+                        "description": "Filter by browser type",
+                        "name": "browser",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Number of profiles to skip",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Maximum number of profiles to return",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of profiles",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ProfileListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new browser profile for saving and reusing browser state",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "profiles"
+                ],
+                "summary": "Create a new profile",
+                "parameters": [
+                    {
+                        "description": "Profile configuration",
+                        "name": "profile",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.CreateProfileRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Profile created successfully",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.Profile"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request data",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/profiles/import": {
+            "post": {
+                "description": "Import a browser profile from a ZIP archive",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "profiles"
+                ],
+                "summary": "Import a profile",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "Profile ZIP archive",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Profile name",
+                        "name": "name",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Profile description",
+                        "name": "description",
+                        "in": "formData"
+                    },
+                    {
+                        "enum": [
+                            "chrome",
+                            "chromium",
+                            "firefox",
+                            "edge",
+                            "webkit",
+                            "safari"
+                        ],
+                        "type": "string",
+                        "description": "Browser type",
+                        "name": "browser",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Profile imported successfully",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.Profile"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request or file",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/profiles/{id}": {
+            "get": {
+                "description": "Get detailed information about a specific profile",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "profiles"
+                ],
+                "summary": "Get a profile",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Profile ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Profile details",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.Profile"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid profile ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Profile not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a profile and its associated data. Cannot delete profiles with active sessions.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "profiles"
+                ],
+                "summary": "Delete a profile",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Profile ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Profile deleted successfully",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid profile ID or profile has active sessions",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Profile not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "Update profile metadata (name, description)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "profiles"
+                ],
+                "summary": "Update a profile",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Profile ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to update",
+                        "name": "updates",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.UpdateProfileRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated profile",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.Profile"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Profile not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/profiles/{id}/export": {
+            "get": {
+                "description": "Export a browser profile as a ZIP archive",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/zip"
+                ],
+                "tags": [
+                    "profiles"
+                ],
+                "summary": "Export a profile",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Profile ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Profile ZIP archive",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid profile ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Profile not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/sessions": {
             "get": {
                 "description": "Get a list of browser sessions with optional filtering by status, time range, and pagination",
@@ -1285,6 +1662,10 @@
                     "type": "string",
                     "example": "chrome-pool"
                 },
+                "profile_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440001"
+                },
                 "provider": {
                     "type": "string",
                     "example": "local"
@@ -1623,6 +2004,145 @@
                 "total": {
                     "type": "integer",
                     "example": 5
+                }
+            }
+        },
+        "internal_profiles.CreateProfileRequest": {
+            "type": "object",
+            "required": [
+                "browser",
+                "name"
+            ],
+            "properties": {
+                "browser": {
+                    "enum": [
+                        "chrome",
+                        "chromium",
+                        "firefox",
+                        "edge",
+                        "webkit",
+                        "safari"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/Browser"
+                        }
+                    ]
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 1000
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "minLength": 1
+                }
+            }
+        },
+        "internal_profiles.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_profiles.MessageResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_profiles.Profile": {
+            "type": "object",
+            "properties": {
+                "active_sessions": {
+                    "description": "Computed fields",
+                    "type": "integer"
+                },
+                "browser": {
+                    "$ref": "#/definitions/Browser"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_used_at": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "storage_backend": {
+                    "$ref": "#/definitions/internal_profiles.StorageBackend"
+                },
+                "total_sessions": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_profiles.ProfileListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "profiles": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_profiles.Profile"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_profiles.StorageBackend": {
+            "type": "string",
+            "enum": [
+                "local",
+                "s3"
+            ],
+            "x-enum-varnames": [
+                "StorageBackendLocal",
+                "StorageBackendS3"
+            ]
+        },
+        "internal_profiles.UpdateProfileRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 1000
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "minLength": 1
                 }
             }
         }

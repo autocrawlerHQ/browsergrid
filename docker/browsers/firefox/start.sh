@@ -22,14 +22,57 @@ echo "Current user: $(whoami)"
 echo "UID: $(id -u)"
 echo "GID: $(id -g)"
 
-# Ensure Firefox profile directory exists with proper permissions
-if [ ! -d "${HOME}/firefox-profile" ]; then
-  echo "Creating Firefox profile directory"
-  mkdir -p ${HOME}/firefox-profile
-  chmod 755 ${HOME}/firefox-profile
+# Handle profile mounting when running in Docker
+if [ -n "$BROWSERGRID_PROFILE_ID" ]; then
+  PROFILE_PATH="/var/lib/browsergrid/profiles/${BROWSERGRID_PROFILE_ID}/user-data"
+  if [ -d "$PROFILE_PATH" ]; then
+    echo "Using existing profile: $BROWSERGRID_PROFILE_ID"
+    echo "Profile path: $PROFILE_PATH"
+    
+    # Remove existing firefox-profile if it's not a symlink
+    if [ -d "${HOME}/firefox-profile" ] && [ ! -L "${HOME}/firefox-profile" ]; then
+      rm -rf ${HOME}/firefox-profile
+    fi
+    
+    # Create symlink to profile data
+    ln -sfn $PROFILE_PATH ${HOME}/firefox-profile
+    
+    # Ensure proper permissions (only if we can write to it)
+    if [ -w ${HOME}/firefox-profile ]; then
+      chmod 755 ${HOME}/firefox-profile
+    else
+      echo "Warning: Cannot change permissions on ${HOME}/firefox-profile (this is normal for volume mounts)"
+    fi
+    
+    echo "Profile mounted successfully"
+  else
+    echo "Profile $BROWSERGRID_PROFILE_ID not found at $PROFILE_PATH"
+    echo "Creating new Firefox profile directory"
+    mkdir -p ${HOME}/firefox-profile
+    if [ -w ${HOME}/firefox-profile ]; then
+      chmod 755 ${HOME}/firefox-profile
+    else
+      echo "Warning: Cannot change permissions on ${HOME}/firefox-profile (this is normal for volume mounts)"
+    fi
+  fi
 else
-  echo "Firefox profile directory exists, ensuring correct permissions"
-  chmod 755 ${HOME}/firefox-profile
+  # No profile specified, use default behavior
+  if [ ! -d "${HOME}/firefox-profile" ]; then
+    echo "Creating Firefox profile directory"
+    mkdir -p ${HOME}/firefox-profile
+    if [ -w ${HOME}/firefox-profile ]; then
+      chmod 755 ${HOME}/firefox-profile
+    else
+      echo "Warning: Cannot change permissions on ${HOME}/firefox-profile (this is normal for volume mounts)"
+    fi
+  else
+    echo "Firefox profile directory exists, ensuring correct permissions"
+    if [ -w ${HOME}/firefox-profile ]; then
+      chmod 755 ${HOME}/firefox-profile
+    else
+      echo "Warning: Cannot change permissions on ${HOME}/firefox-profile (this is normal for volume mounts)"
+    fi
+  fi
 fi
 
 # If using a custom Firefox profile instead of the default one

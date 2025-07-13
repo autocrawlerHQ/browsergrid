@@ -132,11 +132,11 @@ type Session struct {
 	LiveURL    *string `json:"live_url,omitempty" example:"http://localhost:80"`
 
 	WorkPoolID *uuid.UUID `json:"work_pool_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440002"`
-
-	PoolID    *string    `json:"pool_id,omitempty" example:"chrome-pool"`
-	IsPooled  bool       `json:"is_pooled" example:"false"`
-	ClaimedAt *time.Time `json:"claimed_at,omitempty" example:"2023-01-01T00:30:00Z"`
-	ClaimedBy *string    `json:"claimed_by,omitempty" example:"client-123"`
+	ProfileID  *uuid.UUID `json:"profile_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440001"`
+	PoolID     *string    `json:"pool_id,omitempty" example:"chrome-pool"`
+	IsPooled   bool       `json:"is_pooled" example:"false"`
+	ClaimedAt  *time.Time `json:"claimed_at,omitempty" example:"2023-01-01T00:30:00Z"`
+	ClaimedBy  *string    `json:"claimed_by,omitempty" example:"client-123"`
 
 	AvailableAt *time.Time `json:"available_at,omitempty" example:"2023-01-01T00:15:00Z"`
 } //@name Session

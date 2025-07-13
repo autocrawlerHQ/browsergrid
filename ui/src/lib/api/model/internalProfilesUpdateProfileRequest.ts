@@ -6,9 +6,12 @@
  * OpenAPI spec version: 2.0
  */
 
-/**
- * Standard error response format
- */
-export interface ErrorResponse {
-  error?: string;
+export interface InternalProfilesUpdateProfileRequest {
+  /** @maxLength 1000 */
+  description?: string;
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  name?: string;
 }

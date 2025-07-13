@@ -12,6 +12,8 @@ services:
       - ../.air.toml:/app/.air.toml:ro
       # Cache Go modules for faster rebuilds
       - go_mod_cache:/go/pkg/mod
+      # Shared profile storage
+      - profile_data:/var/lib/browsergrid/profiles
     environment:
       - BROWSERGRID_ENV=dev
       - BROWSERGRID_POSTGRES_HOST=db
@@ -42,6 +44,8 @@ services:
       - go_mod_cache:/go/pkg/mod
       # Mount Docker socket for Docker provider
       - /var/run/docker.sock:/var/run/docker.sock
+      # Shared profile storage
+      - profile_data:/var/lib/browsergrid/profiles
     environment:
       - BROWSERGRID_POSTGRES_HOST=db
       - BROWSERGRID_POSTGRES_PORT=5432
@@ -93,4 +97,5 @@ services:
 
 volumes:
   go_mod_cache:
-  prometheus_data: 
+  prometheus_data:
+  profile_data: 

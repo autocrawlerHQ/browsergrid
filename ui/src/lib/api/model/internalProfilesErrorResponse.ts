@@ -6,9 +6,6 @@
  * OpenAPI spec version: 2.0
  */
 
-/**
- * Standard error response format
- */
-export interface ErrorResponse {
+export interface InternalProfilesErrorResponse {
   error?: string;
 }

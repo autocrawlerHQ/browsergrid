@@ -193,6 +193,9 @@ definitions:
       pool_id:
         example: chrome-pool
         type: string
+      profile_id:
+        example: 550e8400-e29b-41d4-a716-446655440001
+        type: string
       provider:
         example: local
         type: string
@@ -452,6 +455,100 @@ definitions:
         example: 5
         type: integer
     type: object
+  internal_profiles.CreateProfileRequest:
+    properties:
+      browser:
+        allOf:
+        - $ref: '#/definitions/Browser'
+        enum:
+        - chrome
+        - chromium
+        - firefox
+        - edge
+        - webkit
+        - safari
+      description:
+        maxLength: 1000
+        type: string
+      name:
+        maxLength: 255
+        minLength: 1
+        type: string
+    required:
+    - browser
+    - name
+    type: object
+  internal_profiles.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  internal_profiles.MessageResponse:
+    properties:
+      message:
+        type: string
+    type: object
+  internal_profiles.Profile:
+    properties:
+      active_sessions:
+        description: Computed fields
+        type: integer
+      browser:
+        $ref: '#/definitions/Browser'
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      last_used_at:
+        type: string
+      metadata:
+        items:
+          type: integer
+        type: array
+      name:
+        type: string
+      size_bytes:
+        type: integer
+      storage_backend:
+        $ref: '#/definitions/internal_profiles.StorageBackend'
+      total_sessions:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  internal_profiles.ProfileListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      profiles:
+        items:
+          $ref: '#/definitions/internal_profiles.Profile'
+        type: array
+      total:
+        type: integer
+    type: object
+  internal_profiles.StorageBackend:
+    enum:
+    - local
+    - s3
+    type: string
+    x-enum-varnames:
+    - StorageBackendLocal
+    - StorageBackendS3
+  internal_profiles.UpdateProfileRequest:
+    properties:
+      description:
+        maxLength: 1000
+        type: string
+      name:
+        maxLength: 255
+        minLength: 1
+        type: string
+    type: object
 externalDocs:
   description: OpenAPI
   url: https://swagger.io/resources/open-api/
@@ -613,6 +710,262 @@ paths:
       summary: Create session metrics
       tags:
       - metrics
+  /api/v1/profiles:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of browser profiles
+      parameters:
+      - description: Filter by browser type
+        enum:
+        - chrome
+        - chromium
+        - firefox
+        - edge
+        - webkit
+        - safari
+        in: query
+        name: browser
+        type: string
+      - default: 0
+        description: Number of profiles to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - default: 20
+        description: Maximum number of profiles to return
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of profiles
+          schema:
+            $ref: '#/definitions/internal_profiles.ProfileListResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+      summary: List profiles
+      tags:
+      - profiles
+    post:
+      consumes:
+      - application/json
+      description: Create a new browser profile for saving and reusing browser state
+      parameters:
+      - description: Profile configuration
+        in: body
+        name: profile
+        required: true
+        schema:
+          $ref: '#/definitions/internal_profiles.CreateProfileRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Profile created successfully
+          schema:
+            $ref: '#/definitions/internal_profiles.Profile'
+        "400":
+          description: Invalid request data
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+      summary: Create a new profile
+      tags:
+      - profiles
+  /api/v1/profiles/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a profile and its associated data. Cannot delete profiles
+        with active sessions.
+      parameters:
+      - description: Profile ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Profile deleted successfully
+          schema:
+            $ref: '#/definitions/internal_profiles.MessageResponse'
+        "400":
+          description: Invalid profile ID or profile has active sessions
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+        "404":
+          description: Profile not found
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+      summary: Delete a profile
+      tags:
+      - profiles
+    get:
+      consumes:
+      - application/json
+      description: Get detailed information about a specific profile
+      parameters:
+      - description: Profile ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Profile details
+          schema:
+            $ref: '#/definitions/internal_profiles.Profile'
+        "400":
+          description: Invalid profile ID
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+        "404":
+          description: Profile not found
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+      summary: Get a profile
+      tags:
+      - profiles
+    patch:
+      consumes:
+      - application/json
+      description: Update profile metadata (name, description)
+      parameters:
+      - description: Profile ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: updates
+        required: true
+        schema:
+          $ref: '#/definitions/internal_profiles.UpdateProfileRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated profile
+          schema:
+            $ref: '#/definitions/internal_profiles.Profile'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+        "404":
+          description: Profile not found
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+      summary: Update a profile
+      tags:
+      - profiles
+  /api/v1/profiles/{id}/export:
+    get:
+      consumes:
+      - application/json
+      description: Export a browser profile as a ZIP archive
+      parameters:
+      - description: Profile ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/zip
+      responses:
+        "200":
+          description: Profile ZIP archive
+          schema:
+            type: file
+        "400":
+          description: Invalid profile ID
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+        "404":
+          description: Profile not found
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+      summary: Export a profile
+      tags:
+      - profiles
+  /api/v1/profiles/import:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Import a browser profile from a ZIP archive
+      parameters:
+      - description: Profile ZIP archive
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: Profile name
+        in: formData
+        name: name
+        required: true
+        type: string
+      - description: Profile description
+        in: formData
+        name: description
+        type: string
+      - description: Browser type
+        enum:
+        - chrome
+        - chromium
+        - firefox
+        - edge
+        - webkit
+        - safari
+        in: formData
+        name: browser
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Profile imported successfully
+          schema:
+            $ref: '#/definitions/internal_profiles.Profile'
+        "400":
+          description: Invalid request or file
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+      summary: Import a profile
+      tags:
+      - profiles
   /api/v1/sessions:
     get:
       consumes:

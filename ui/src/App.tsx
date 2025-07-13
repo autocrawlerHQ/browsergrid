@@ -5,6 +5,7 @@ import RootLayout from '@/layouts/RootLayout'
 import Overview from '@/pages/Overview'
 import Sessions from '@/pages/Sessions'
 import SessionDetails from '@/pages/SessionDetails'
+import Profiles from '@/pages/Profiles'
 import WorkPools from '@/pages/WorkPools'
 import Queue from '@/pages/Queue'
 //import ScheduledTasks from '@/pages/ScheduledTasks'
@@ -20,6 +21,7 @@ const router = createBrowserRouter([
       { index: true, element: <Overview /> },
       { path: 'sessions', element: <Sessions /> },
       { path: 'sessions/:id', element: <SessionDetails /> },
+      { path: 'profiles', element: <Profiles /> },
       { path: 'workpools', element: <WorkPools /> },
       { path: 'queue', element: <Queue /> },
       //{ path: 'scheduled-tasks', element: <ScheduledTasks /> },

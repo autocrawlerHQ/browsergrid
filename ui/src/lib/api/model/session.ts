@@ -33,6 +33,7 @@ export interface Session {
   live_url?: string;
   operating_system?: OperatingSystem;
   pool_id?: string;
+  profile_id?: string;
   provider?: string;
   proxy?: ProxyConfig;
   resource_limits?: ResourceLimits;

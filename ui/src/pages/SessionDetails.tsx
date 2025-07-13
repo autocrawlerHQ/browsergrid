@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { StatusBadge } from '@/components/dashboard/StatusBadge';
 import { LiveVNCFrame } from '@/components/LiveVNCFrame';
 import { useGetApiV1SessionsIdEvents } from '@/lib/api/events/events';
+import { useGetApiV1Profiles } from '@/lib/api/profiles/profiles';
 import { processVncUrl } from '@/lib/utils';
 import type { Session, SessionEvent } from '@/lib/api/model';
 import { useGetApiV1SessionsId } from '@/lib/api/sessions/sessions';
@@ -26,7 +27,8 @@ export default function SessionDetails() {
     { limit: 50, offset: 0 }
   );
 
-  const { data: session, isLoading: sessionLoading } = useGetApiV1SessionsId(id || ''); 
+  const { data: session, isLoading: sessionLoading } = useGetApiV1SessionsId(id || '');
+  const { data: profilesData } = useGetApiV1Profiles(); 
 
 
   if (!id) {
@@ -37,6 +39,17 @@ export default function SessionDetails() {
           <Button onClick={() => navigate('/sessions')} variant="outline" className="mt-2">
             Back to Sessions
           </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (sessionLoading || !session) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="flex items-center space-x-2">
+          <RefreshCw className="h-4 w-4 animate-spin text-neutral-400" />
+          <span className="text-sm text-neutral-600">Loading session...</span>
         </div>
       </div>
     );
@@ -150,6 +163,14 @@ export default function SessionDetails() {
                   <span className="text-xs text-neutral-600">Screen</span>
                   <span className="text-xs text-neutral-900">{session.screen?.width}×{session.screen?.height}</span>
                 </div>
+                {session.profile_id && (
+                  <div className="flex justify-between py-1">
+                    <span className="text-xs text-neutral-600">Profile</span>
+                    <span className="text-xs text-neutral-900">
+                      {profilesData?.profiles?.find(p => p.id === session.profile_id)?.name || 'Unknown Profile'}
+                    </span>
+                  </div>
+                )}
                 {session.ws_endpoint && (
                   <div className="flex justify-between py-1">
                     <span className="text-xs text-neutral-600">WebSocket</span>
@@ -188,7 +209,7 @@ export default function SessionDetails() {
               </Card>
             )}
             
-            {(session.claimed_by || session.worker_id) && (
+            {session.claimed_by && (
               <Card className="border-neutral-200">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-neutral-900">Assignment Details</CardTitle>
@@ -206,12 +227,7 @@ export default function SessionDetails() {
                       <span className="text-xs text-neutral-900">{new Date(session.claimed_at).toLocaleString()}</span>
                     </div>
                   )}
-                  {session.worker_id && (
-                    <div className="flex justify-between py-1">
-                      <span className="text-xs text-neutral-600">Worker</span>
-                      <span className="font-mono text-xs text-neutral-900">{session.worker_id.substring(0, 8)}...</span>
-                    </div>
-                  )}
+
                 </CardContent>
               </Card>
             )}

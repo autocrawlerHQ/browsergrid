@@ -16,13 +16,57 @@ done
 
 
 
-if [ ! -d "${HOME}/data-dir" ]; then
-  echo "Creating Chrome data directory"
-  mkdir -p ${HOME}/data-dir
-  chmod 755 ${HOME}/data-dir
+# Handle profile mounting when running in Docker
+if [ -n "$BROWSERGRID_PROFILE_ID" ]; then
+  PROFILE_PATH="/var/lib/browsergrid/profiles/${BROWSERGRID_PROFILE_ID}/user-data"
+  if [ -d "$PROFILE_PATH" ]; then
+    echo "Using existing profile: $BROWSERGRID_PROFILE_ID"
+    echo "Profile path: $PROFILE_PATH"
+    
+    # Remove existing data-dir if it's not a symlink
+    if [ -d "${HOME}/data-dir" ] && [ ! -L "${HOME}/data-dir" ]; then
+      rm -rf ${HOME}/data-dir
+    fi
+    
+    # Create symlink to profile data
+    ln -sfn $PROFILE_PATH ${HOME}/data-dir
+    
+    # Ensure proper permissions (only if we can write to it)
+    if [ -w ${HOME}/data-dir ]; then
+      chmod 755 ${HOME}/data-dir
+    else
+      echo "Warning: Cannot change permissions on ${HOME}/data-dir (this is normal for volume mounts)"
+    fi
+    
+    echo "Profile mounted successfully"
+  else
+    echo "Profile $BROWSERGRID_PROFILE_ID not found at $PROFILE_PATH"
+    echo "Creating new data directory"
+    mkdir -p ${HOME}/data-dir
+    if [ -w ${HOME}/data-dir ]; then
+      chmod 755 ${HOME}/data-dir
+    else
+      echo "Warning: Cannot change permissions on ${HOME}/data-dir (this is normal for volume mounts)"
+    fi
+  fi
 else
-  echo "Chrome data directory exists, ensuring correct permissions"
-  chmod 755 ${HOME}/data-dir
+  # No profile specified, use default behavior
+  if [ ! -d "${HOME}/data-dir" ]; then
+    echo "Creating Chrome data directory"
+    mkdir -p ${HOME}/data-dir
+    if [ -w ${HOME}/data-dir ]; then
+      chmod 755 ${HOME}/data-dir
+    else
+      echo "Warning: Cannot change permissions on ${HOME}/data-dir (this is normal for volume mounts)"
+    fi
+  else
+    echo "Chrome data directory exists, ensuring correct permissions"
+    if [ -w ${HOME}/data-dir ]; then
+      chmod 755 ${HOME}/data-dir
+    else
+      echo "Warning: Cannot change permissions on ${HOME}/data-dir (this is normal for volume mounts)"
+    fi
+  fi
 fi
 
 PROXY_ARG=""

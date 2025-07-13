@@ -16,10 +16,24 @@ import (
 	"github.com/autocrawlerHQ/browsergrid/internal/tasks"
 )
 
+// ProfileService defines the interface for profile operations that sessions need
+type ProfileService interface {
+	// ValidateProfile checks if a profile exists and is valid for the given browser
+	ValidateProfile(ctx context.Context, profileID uuid.UUID, browser Browser) error
+}
+
+// ProfileStore defines the interface for profile storage validation
+type ProfileStore interface {
+	// ValidateProfileForBrowser validates that a profile exists and is compatible with the browser type
+	ValidateProfileForBrowser(ctx context.Context, profileID uuid.UUID, browser Browser) error
+}
+
 type Dependencies struct {
-	DB         *gorm.DB
-	PoolSvc    PoolService
-	TaskClient *asynq.Client
+	DB           *gorm.DB
+	PoolSvc      PoolService
+	TaskClient   *asynq.Client
+	ProfileSvc   ProfileService
+	ProfileStore ProfileStore
 }
 
 func RegisterRoutes(rg *gin.RouterGroup, deps Dependencies) {
@@ -109,6 +123,21 @@ func createSession(store *Store, deps Dependencies) gin.HandlerFunc {
 			req.ExpiresAt = &expires
 		}
 
+		// Validate profile if provided
+		if req.ProfileID != nil {
+			if deps.ProfileStore != nil {
+				if err := deps.ProfileStore.ValidateProfileForBrowser(c.Request.Context(), *req.ProfileID, req.Browser); err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "invalid profile: " + err.Error()})
+					return
+				}
+			} else if deps.ProfileSvc != nil {
+				if err := deps.ProfileSvc.ValidateProfile(c.Request.Context(), *req.ProfileID, req.Browser); err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "invalid profile: " + err.Error()})
+					return
+				}
+			}
+		}
+
 		if req.WorkPoolID == nil {
 			if err := assignToDefaultWorkPool(c.Request.Context(), deps.PoolSvc, &req); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to assign to default work pool: " + err.Error()})
@@ -137,25 +166,30 @@ func createSession(store *Store, deps Dependencies) gin.HandlerFunc {
 			QueueName:          getQueueName(pool.Provider),
 		}
 
-		task, err := tasks.NewSessionStartTask(payload)
-		if err != nil {
-			store.UpdateSessionStatus(ctx, req.ID, StatusFailed)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create task: " + err.Error()})
-			return
-		}
+		// Skip task enqueueing in tests when TaskClient is nil
+		if deps.TaskClient != nil {
+			task, err := tasks.NewSessionStartTask(payload)
+			if err != nil {
+				store.UpdateSessionStatus(ctx, req.ID, StatusFailed)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create task: " + err.Error()})
+				return
+			}
 
-		info, err := deps.TaskClient.Enqueue(task,
-			asynq.Queue(payload.QueueName),
-			asynq.MaxRetry(3),
-			asynq.Timeout(5*time.Minute),
-		)
-		if err != nil {
-			store.UpdateSessionStatus(ctx, req.ID, StatusFailed)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to enqueue task: " + err.Error()})
-			return
-		}
+			info, err := deps.TaskClient.Enqueue(task,
+				asynq.Queue(payload.QueueName),
+				asynq.MaxRetry(3),
+				asynq.Timeout(5*time.Minute),
+			)
+			if err != nil {
+				store.UpdateSessionStatus(ctx, req.ID, StatusFailed)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to enqueue task: " + err.Error()})
+				return
+			}
 
-		log.Printf("[API] Created session %s and enqueued task %s", req.ID, info.ID)
+			log.Printf("[API] Created session %s and enqueued task %s", req.ID, info.ID)
+		} else {
+			log.Printf("[API] Created session %s (task client disabled for testing)", req.ID)
+		}
 
 		event := SessionEvent{
 			SessionID: req.ID,
@@ -351,6 +385,15 @@ func createEvent(store *Store) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+
+		// Update session status if event triggers a transition
+		if newStatus, shouldUpdate := statusFromEvent(ev.Event); shouldUpdate {
+			if err := store.UpdateSessionStatus(c.Request.Context(), ev.SessionID, newStatus); err != nil {
+				// Log error but don't fail the request since event was created
+				log.Printf("Failed to update session status for event %s: %v", ev.Event, err)
+			}
+		}
+
 		c.JSON(http.StatusCreated, ev)
 	}
 }

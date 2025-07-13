@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -14,10 +15,12 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/google/uuid"
 
+	"github.com/autocrawlerHQ/browsergrid/internal/profiles"
 	"github.com/autocrawlerHQ/browsergrid/internal/provider"
 	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
 	"github.com/autocrawlerHQ/browsergrid/internal/workpool"
@@ -28,6 +31,7 @@ type DockerProvisioner struct {
 
 	defaultPort   int
 	healthTimeout time.Duration
+	profileStore  *profiles.LocalProfileStore
 }
 
 func NewDockerProvisioner() *DockerProvisioner {
@@ -36,10 +40,16 @@ func NewDockerProvisioner() *DockerProvisioner {
 		panic(fmt.Errorf("docker client: %w", err))
 	}
 
+	profileStore, err := profiles.NewLocalProfileStore("")
+	if err != nil {
+		panic(fmt.Errorf("profile store: %w", err))
+	}
+
 	return &DockerProvisioner{
 		cli:           cli,
 		defaultPort:   80,
 		healthTimeout: 10 * time.Second,
+		profileStore:  profileStore,
 	}
 }
 
@@ -77,23 +87,80 @@ func (p *DockerProvisioner) Start(
 		}
 	}
 
+	// Prepare container configuration
+	containerConfig := &container.Config{
+		Image: browserImage,
+		Env:   browserEnv,
+		Labels: map[string]string{
+			"com.browsergrid.session": sess.ID.String(),
+		},
+		Hostname: "browser",
+		ExposedPorts: natSet(
+			fmt.Sprintf("%d/tcp", p.defaultPort),
+		),
+	}
+
+	hostConfig := &container.HostConfig{
+		AutoRemove:   false,
+		PortBindings: natMap(p.defaultPort, 0),
+		Tmpfs:        map[string]string{"/dev/shm": "rw,size=2g"},
+	}
+
+	// Mount profile if specified
+	if sess.ProfileID != nil {
+		log.Printf("[DOCKER] Session %s requires profile %s", shortID, sess.ProfileID)
+
+		profilePath, err := p.profileStore.GetProfilePath(ctx, sess.ProfileID.String())
+		if err != nil {
+			log.Printf("[DOCKER] Failed to get profile path for %s: %v", sess.ProfileID, err)
+			return "", "", fmt.Errorf("failed to get profile path: %w", err)
+		}
+
+		// Check if profile path exists and is accessible
+		if _, err := os.Stat(profilePath); os.IsNotExist(err) {
+			log.Printf("[DOCKER] Profile path does not exist: %s", profilePath)
+			return "", "", fmt.Errorf("profile path does not exist: %s", profilePath)
+		} else if err != nil {
+			log.Printf("[DOCKER] Cannot access profile path %s: %v", profilePath, err)
+			return "", "", fmt.Errorf("cannot access profile path: %w", err)
+		}
+
+		// When running in Docker, use volume mount instead of bind mount
+		// because the Docker daemon can't access paths inside containers
+		if runningInDocker() {
+			// Use volume mount to share the profile data volume
+			// The volume name includes the Docker Compose project prefix
+			volumeName := os.Getenv("BROWSERGRID_PROFILE_VOLUME_NAME")
+			if volumeName == "" {
+				volumeName = "browsergrid-server_profile_data"
+			}
+			hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{
+				Type:   mount.TypeVolume,
+				Source: volumeName,
+				Target: "/var/lib/browsergrid/profiles",
+			})
+
+			// Set environment variable to indicate which profile to use
+			containerConfig.Env = append(containerConfig.Env, fmt.Sprintf("BROWSERGRID_PROFILE_ID=%s", sess.ProfileID.String()))
+
+			log.Printf("[DOCKER] Mounting profile volume for profile %s in container %s", sess.ProfileID, shortID)
+		} else {
+			// For non-containerized workers, use bind mount
+			hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{
+				Type:   mount.TypeBind,
+				Source: profilePath,
+				Target: "/home/user/data-dir",
+			})
+
+			log.Printf("[DOCKER] Mounting profile %s from %s to container %s", sess.ProfileID, profilePath, shortID)
+		}
+	} else {
+		log.Printf("[DOCKER] Session %s has no profile, using default browser data directory", shortID)
+	}
+
 	browserResp, err := p.cli.ContainerCreate(ctx,
-		&container.Config{
-			Image: browserImage,
-			Env:   browserEnv,
-			Labels: map[string]string{
-				"com.browsergrid.session": sess.ID.String(),
-			},
-			Hostname: "browser",
-			ExposedPorts: natSet(
-				fmt.Sprintf("%d/tcp", p.defaultPort),
-			),
-		},
-		&container.HostConfig{
-			AutoRemove:   false,
-			PortBindings: natMap(p.defaultPort, 0),
-			Tmpfs:        map[string]string{"/dev/shm": "rw,size=2g"},
-		},
+		containerConfig,
+		hostConfig,
 		nil,
 		nil,
 		browserCName,

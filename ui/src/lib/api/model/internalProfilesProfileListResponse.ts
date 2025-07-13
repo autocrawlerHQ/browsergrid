@@ -5,10 +5,11 @@
  * BrowserGrid is a distributed browser automation platform using task queues for scalable browser session management.
  * OpenAPI spec version: 2.0
  */
+import type { InternalProfilesProfile } from './internalProfilesProfile';
 
-/**
- * Standard error response format
- */
-export interface ErrorResponse {
-  error?: string;
+export interface InternalProfilesProfileListResponse {
+  limit?: number;
+  offset?: number;
+  profiles?: InternalProfilesProfile[];
+  total?: number;
 }
