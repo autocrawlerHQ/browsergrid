@@ -10,7 +10,7 @@ RUN go mod download
 COPY ./docker/browsermux/cmd/ ./cmd/
 COPY ./docker/browsermux/internal/ ./internal/
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o /browsermux ./cmd/browsermux/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o /browsermux ./cmd/main.go
 
 # Stage 2: Base browser image
 FROM ubuntu:22.04 AS browser-base
