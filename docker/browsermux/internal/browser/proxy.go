@@ -52,14 +52,59 @@ func NewCDPProxy(dispatcher EventDispatcher, config CDPProxyConfig) (*CDPProxy, 
 		shutdown:        make(chan struct{}),
 	}
 
-	if err := p.Connect(); err != nil {
-		return nil, fmt.Errorf("CDP proxy initialization error: %w", err)
-	}
+	// Start connection retry logic in background instead of failing immediately
+	go p.connectWithRetry()
 
 	go p.processBrowserMessages()
 	go p.processClientMessages()
 
 	return p, nil
+}
+
+// connectWithRetry continuously tries to connect to the browser until successful
+func (p *CDPProxy) connectWithRetry() {
+	maxRetries := 30 // Try for up to 30 attempts
+	retryDelay := 2 * time.Second
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		select {
+		case <-p.shutdown:
+			return
+		default:
+		}
+
+		log.Printf("Attempting to connect to browser at %s (attempt %d/%d)", p.config.BrowserURL, attempt, maxRetries)
+
+		if err := p.Connect(); err != nil {
+			log.Printf("Failed to connect to browser (attempt %d/%d): %v", attempt, maxRetries, err)
+
+			if attempt == maxRetries {
+				log.Printf("Failed to connect to browser after %d attempts, will continue trying indefinitely", maxRetries)
+				// Continue trying indefinitely with longer delays
+				for {
+					select {
+					case <-p.shutdown:
+						return
+					default:
+					}
+
+					time.Sleep(5 * time.Second)
+					log.Printf("Retrying connection to browser at %s", p.config.BrowserURL)
+
+					if err := p.Connect(); err == nil {
+						log.Printf("Successfully connected to browser at %s", p.config.BrowserURL)
+						return
+					}
+				}
+			}
+
+			time.Sleep(retryDelay)
+			continue
+		}
+
+		log.Printf("Successfully connected to browser at %s", p.config.BrowserURL)
+		return
+	}
 }
 
 func (p *CDPProxy) Connect() error {
@@ -331,21 +376,34 @@ func (p *CDPProxy) processBrowserMessages() {
 		case <-p.shutdown:
 			return
 		default:
-			_, message, err := p.browserConn.ReadMessage()
-			if err != nil {
-				log.Printf("Error reading from browser: %v", err)
-
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-					if err := p.reconnectToBrowser(); err != nil {
-						log.Printf("Failed to reconnect to browser: %v", err)
-						time.Sleep(5 * time.Second)
-					}
-				}
-				continue
-			}
-
-			p.fanOut(message)
 		}
+
+		// Wait for browser connection to be established
+		p.mu.RLock()
+		connected := p.connected
+		browserConn := p.browserConn
+		p.mu.RUnlock()
+
+		if !connected || browserConn == nil {
+			// Wait a bit before checking again
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+
+		_, message, err := browserConn.ReadMessage()
+		if err != nil {
+			log.Printf("Error reading from browser: %v", err)
+
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				if err := p.reconnectToBrowser(); err != nil {
+					log.Printf("Failed to reconnect to browser: %v", err)
+					time.Sleep(5 * time.Second)
+				}
+			}
+			continue
+		}
+
+		p.fanOut(message)
 	}
 }
 
@@ -353,7 +411,19 @@ func (p *CDPProxy) processClientMessages() {
 	for {
 		select {
 		case message := <-p.browserMessages:
-			if err := p.browserConn.WriteMessage(websocket.TextMessage, message); err != nil {
+			// Wait for browser connection to be established
+			p.mu.RLock()
+			connected := p.connected
+			browserConn := p.browserConn
+			p.mu.RUnlock()
+
+			if !connected || browserConn == nil {
+				// Browser not connected, drop the message
+				log.Printf("Dropping client message - browser not connected")
+				continue
+			}
+
+			if err := browserConn.WriteMessage(websocket.TextMessage, message); err != nil {
 				log.Printf("Error sending message to browser: %v", err)
 
 				if err := p.reconnectToBrowser(); err != nil {

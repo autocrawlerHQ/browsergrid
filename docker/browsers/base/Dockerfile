@@ -127,6 +127,7 @@ RUN chmod +x /usr/local/bin/browsermux
 COPY docker/scripts/ /opt/browsergrid/scripts/
 COPY docker/browsers/base/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY docker/browsers/base/entrypoint.sh /usr/local/bin/
+COPY docker/browsers/base/check_profile_permissions.sh /usr/local/bin/
 COPY docker/browsers/base/nginx/nginx.conf /etc/nginx/sites-available/browsergrid
 COPY docker/browsers/base/nginx/setup_nginx.sh /usr/local/bin/
 
@@ -138,6 +139,7 @@ RUN rm -f /etc/nginx/sites-enabled/default && \
 # Set permissions
 RUN chmod -R +x /opt/browsergrid/scripts/ && \
     chmod +x /usr/local/bin/entrypoint.sh && \
+    chmod +x /usr/local/bin/check_profile_permissions.sh && \
     chmod +x /usr/local/bin/setup_nginx.sh && \
     chown -R browseruser:browseruser /opt/browsergrid/scripts
 

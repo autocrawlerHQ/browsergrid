@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -57,6 +58,14 @@ func (p *DockerProvisioner) GetType() workpool.ProviderType { return workpool.Pr
 
 func (p *DockerProvisioner) keepContainers() bool {
 	return strings.ToLower(os.Getenv("BROWSERGRID_KEEP_CONTAINERS")) == "true"
+}
+
+// getenvOr returns the value of the environment variable key or fallback if not set
+func getenvOr(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func (p *DockerProvisioner) Start(
@@ -125,34 +134,60 @@ func (p *DockerProvisioner) Start(
 			return "", "", fmt.Errorf("cannot access profile path: %w", err)
 		}
 
-		// When running in Docker, use volume mount instead of bind mount
-		// because the Docker daemon can't access paths inside containers
+		// Smart profile mounting: use host path when worker is containerized
 		if runningInDocker() {
-			// Use volume mount to share the profile data volume
-			// The volume name includes the Docker Compose project prefix
-			volumeName := os.Getenv("BROWSERGRID_PROFILE_VOLUME_NAME")
-			if volumeName == "" {
-				volumeName = "browsergrid-server_profile_data"
+			// Try to get the host path of the profile volume
+			volumeName := getenvOr("BROWSERGRID_PROFILE_VOLUME_NAME", "browsergrid-server_profile_data")
+			vol, err := p.cli.VolumeInspect(ctx, volumeName)
+			if err == nil && vol.Mountpoint != "" {
+				// Build the actual host path to the specific profile
+				hostPath := filepath.Join(vol.Mountpoint, sess.ProfileID.String(), "user-data")
+
+				// Ensure the profile directory exists on the host
+				if _, err := os.Stat(hostPath); os.IsNotExist(err) {
+					log.Printf("[DOCKER] Profile directory missing on host, creating: %s", hostPath)
+					if err := os.MkdirAll(hostPath, 0755); err != nil {
+						log.Printf("[DOCKER] Failed to create profile directory: %v", err)
+					} else {
+						// Fix ownership for browser containers
+						if err := os.Chown(hostPath, 1000, 1000); err != nil {
+							log.Printf("[DOCKER] Warning: Could not fix ownership of %s: %v", hostPath, err)
+						}
+					}
+				}
+
+				// Mount only the specific profile directory
+				hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{
+					Type:   mount.TypeBind,
+					Source: hostPath,
+					Target: "/home/user/data-dir",
+				})
+
+				log.Printf("[DOCKER] Bind-mounted specific profile %s from host path %s", sess.ProfileID, hostPath)
+			} else {
+				// Fallback: mount entire profiles volume with environment variable
+				log.Printf("[DOCKER] Cannot inspect volume %s (%v), falling back to full volume mount", volumeName, err)
+
+				hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{
+					Type:   mount.TypeVolume,
+					Source: volumeName,
+					Target: "/var/lib/browsergrid/profiles",
+				})
+
+				// Set environment variable to indicate which profile to use
+				containerConfig.Env = append(containerConfig.Env, fmt.Sprintf("BROWSERGRID_PROFILE_ID=%s", sess.ProfileID.String()))
+
+				log.Printf("[DOCKER] Fallback: mounted full profiles volume for profile %s", sess.ProfileID)
 			}
-			hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{
-				Type:   mount.TypeVolume,
-				Source: volumeName,
-				Target: "/var/lib/browsergrid/profiles",
-			})
-
-			// Set environment variable to indicate which profile to use
-			containerConfig.Env = append(containerConfig.Env, fmt.Sprintf("BROWSERGRID_PROFILE_ID=%s", sess.ProfileID.String()))
-
-			log.Printf("[DOCKER] Mounting profile volume for profile %s in container %s", sess.ProfileID, shortID)
 		} else {
-			// For non-containerized workers, use bind mount
+			// Non-containerized worker: use direct bind mount
 			hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{
 				Type:   mount.TypeBind,
 				Source: profilePath,
 				Target: "/home/user/data-dir",
 			})
 
-			log.Printf("[DOCKER] Mounting profile %s from %s to container %s", sess.ProfileID, profilePath, shortID)
+			log.Printf("[DOCKER] Direct bind-mounted profile %s from %s", sess.ProfileID, profilePath)
 		}
 	} else {
 		log.Printf("[DOCKER] Session %s has no profile, using default browser data directory", shortID)

@@ -55,6 +55,14 @@ func (s *LocalProfileStore) InitializeProfile(ctx context.Context, profileID str
 		return fmt.Errorf("create user-data directory: %w", err)
 	}
 
+	// Ensure proper ownership for browser containers (UID 1000)
+	// This is necessary when running in Docker where the browser containers
+	// run as browseruser (UID 1000) but the server may run as root
+	if err := s.ensureProperOwnership(profilePath, userDataPath); err != nil {
+		// Log but don't fail - ownership issues are common in Docker
+		fmt.Printf("Warning: Could not set proper ownership for profile %s: %v\n", profileID, err)
+	}
+
 	// Write initial metadata
 	metadata := LocalProfileMetadata{
 		Version:      1,
@@ -105,6 +113,13 @@ func (s *LocalProfileStore) ImportProfile(ctx context.Context, profileID string,
 	if err := s.validateProfileStructure(profilePath); err != nil {
 		os.RemoveAll(profilePath) // Cleanup on error
 		return fmt.Errorf("invalid profile structure: %w", err)
+	}
+
+	// Ensure proper ownership for browser containers
+	userDataPath := filepath.Join(profilePath, localUserDataDirName)
+	if err := s.ensureProperOwnership(profilePath, userDataPath); err != nil {
+		// Log but don't fail - ownership issues are common in Docker
+		fmt.Printf("Warning: Could not set proper ownership for imported profile %s: %v\n", profileID, err)
 	}
 
 	// Update metadata
@@ -223,6 +238,31 @@ func (s *LocalProfileStore) ValidateProfile(ctx context.Context, profileID strin
 
 func (s *LocalProfileStore) getProfilePath(profileID string) string {
 	return filepath.Join(s.basePath, profileID)
+}
+
+func (s *LocalProfileStore) ensureProperOwnership(profilePath, userDataPath string) error {
+	// Try to change ownership to browseruser (UID 1000, GID 1000)
+	// This is the standard UID/GID used in browser containers
+	const browserUID = 1000
+	const browserGID = 1000
+
+	// Change ownership of profile directory
+	if err := os.Chown(profilePath, browserUID, browserGID); err != nil {
+		return fmt.Errorf("chown profile directory: %w", err)
+	}
+
+	// Change ownership of user-data directory
+	if err := os.Chown(userDataPath, browserUID, browserGID); err != nil {
+		return fmt.Errorf("chown user-data directory: %w", err)
+	}
+
+	// Walk through and fix ownership of all existing files/directories
+	return filepath.Walk(userDataPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		return os.Chown(path, browserUID, browserGID)
+	})
 }
 
 func (s *LocalProfileStore) writeMetadata(profilePath string, metadata LocalProfileMetadata) error {
