@@ -14,6 +14,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
+	"github.com/autocrawlerHQ/browsergrid/internal/deployments"
 	"github.com/autocrawlerHQ/browsergrid/internal/profiles"
 	"github.com/autocrawlerHQ/browsergrid/internal/provider"
 	_ "github.com/autocrawlerHQ/browsergrid/internal/provider/docker"
@@ -49,6 +50,9 @@ func main() {
 		log.Fatal("[STARTUP] ✗ Failed to initialize profile store:", err)
 	}
 
+	// Initialize deployment runner
+	deploymentRunner := deployments.NewDeploymentRunner(db, "/tmp/deployments")
+
 	prov, ok := provider.FromString(cfg.Provider)
 	if !ok {
 		log.Fatalf("[STARTUP] ✗ Unknown provider type: %s", cfg.Provider)
@@ -72,6 +76,8 @@ func main() {
 	mux.HandleFunc(tasks.TypeSessionStop, handleSessionStop(sessStore, prov, profileStore, localProfileStore))
 	mux.HandleFunc(tasks.TypeSessionHealthCheck, handleSessionHealthCheck(sessStore, prov))
 	mux.HandleFunc(tasks.TypeSessionTimeout, handleSessionTimeout(sessStore, prov, cfg.RedisAddr))
+	mux.HandleFunc(tasks.TypeDeploymentRun, handleDeploymentRun(deploymentRunner))
+	mux.HandleFunc(tasks.TypeDeploymentSchedule, handleDeploymentSchedule(deploymentRunner))
 
 	log.Printf("[WORKER] Starting worker...")
 	log.Printf("[WORKER] └── Name: %s", cfg.Name)
@@ -355,6 +361,47 @@ func loadConfig() WorkerConfig {
 	}
 
 	return cfg
+}
+
+// handleDeploymentRun handles deployment run tasks
+func handleDeploymentRun(runner *deployments.DeploymentRunner) asynq.HandlerFunc {
+	return func(ctx context.Context, t *asynq.Task) error {
+		var payload tasks.DeploymentRunPayload
+		if err := payload.Unmarshal(t.Payload()); err != nil {
+			return fmt.Errorf("failed to unmarshal payload: %w", err)
+		}
+
+		log.Printf("[DEPLOYMENT] Starting deployment run %s for deployment %s", payload.RunID, payload.DeploymentID)
+
+		if err := runner.ExecuteDeployment(ctx, payload.RunID); err != nil {
+			log.Printf("[DEPLOYMENT] ✗ Failed to execute deployment run %s: %v", payload.RunID, err)
+			return fmt.Errorf("failed to execute deployment: %w", err)
+		}
+
+		log.Printf("[DEPLOYMENT] ✓ Deployment run %s completed successfully", payload.RunID)
+		return nil
+	}
+}
+
+// handleDeploymentSchedule handles deployment schedule tasks
+func handleDeploymentSchedule(runner *deployments.DeploymentRunner) asynq.HandlerFunc {
+	return func(ctx context.Context, t *asynq.Task) error {
+		var payload tasks.DeploymentSchedulePayload
+		if err := payload.Unmarshal(t.Payload()); err != nil {
+			return fmt.Errorf("failed to unmarshal payload: %w", err)
+		}
+
+		log.Printf("[DEPLOYMENT] Processing scheduled deployment %s", payload.DeploymentID)
+
+		// TODO: Implement deployment scheduling logic
+		// This would involve:
+		// 1. Parsing the cron schedule
+		// 2. Creating new deployment runs based on the schedule
+		// 3. Enqueuing deployment run tasks
+
+		log.Printf("[DEPLOYMENT] ✓ Deployment schedule %s processed successfully", payload.DeploymentID)
+		return nil
+	}
 }
 
 func connectDB(databaseURL string) (*gorm.DB, error) {

@@ -12,6 +12,7 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 
 	"github.com/autocrawlerHQ/browsergrid/internal/db"
+	"github.com/autocrawlerHQ/browsergrid/internal/deployments"
 	"github.com/autocrawlerHQ/browsergrid/internal/poolmgr"
 	"github.com/autocrawlerHQ/browsergrid/internal/profiles"
 	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
@@ -84,6 +85,12 @@ func New(database *db.DB, reconciler *poolmgr.Reconciler, taskClient *asynq.Clie
 		profiles.RegisterRoutes(v1, profileDeps)
 
 		workpool.RegisterRoutes(v1, database.DB)
+
+		deploymentDeps := deployments.Dependencies{
+			DB:         database.DB,
+			TaskClient: taskClient,
+		}
+		deployments.RegisterRoutes(v1, deploymentDeps)
 
 		poolmgr.RegisterRoutes(v1, reconciler)
 	}

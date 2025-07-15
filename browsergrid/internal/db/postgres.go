@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"github.com/autocrawlerHQ/browsergrid/internal/deployments"
 	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
 	"github.com/autocrawlerHQ/browsergrid/internal/workpool"
 )
@@ -58,6 +59,13 @@ func (db *DB) AutoMigrate() error {
 		&workpool.WorkPool{},
 	); err != nil {
 		return fmt.Errorf("migrate workpool tables: %w", err)
+	}
+
+	if err := db.DB.AutoMigrate(
+		&deployments.Deployment{},
+		&deployments.DeploymentRun{},
+	); err != nil {
+		return fmt.Errorf("migrate deployment tables: %w", err)
 	}
 
 	return nil

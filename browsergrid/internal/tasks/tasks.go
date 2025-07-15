@@ -16,6 +16,8 @@ const (
 	TypePoolScale          = "pool:scale"
 	TypeCleanupExpired     = "cleanup:expired"
 	TypeCleanupOrphaned    = "cleanup:orphaned"
+	TypeDeploymentRun      = "deployment:run"
+	TypeDeploymentSchedule = "deployment:schedule"
 )
 
 type SessionStartPayload struct {
@@ -149,9 +151,9 @@ func GetQueueForTask(taskType string) string {
 	switch taskType {
 	case TypeSessionStop:
 		return "critical"
-	case TypeSessionStart, TypeSessionHealthCheck:
+	case TypeSessionStart, TypeSessionHealthCheck, TypeDeploymentRun:
 		return "default"
-	case TypeSessionTimeout, TypePoolScale, TypeCleanupExpired, TypeCleanupOrphaned:
+	case TypeSessionTimeout, TypeDeploymentSchedule, TypePoolScale, TypeCleanupExpired, TypeCleanupOrphaned:
 		return "low"
 	default:
 		return "default"
@@ -164,13 +166,64 @@ func GetTaskPriority(taskType string) int {
 		return 10
 	case TypeSessionStart:
 		return 8
+	case TypeDeploymentRun:
+		return 7
 	case TypeSessionHealthCheck:
 		return 5
 	case TypeSessionTimeout:
 		return 3
-	case TypePoolScale, TypeCleanupExpired, TypeCleanupOrphaned:
+	case TypeDeploymentSchedule, TypePoolScale, TypeCleanupExpired, TypeCleanupOrphaned:
 		return 1
 	default:
 		return 5
 	}
+}
+
+// DeploymentRunPayload represents the payload for a deployment run task
+type DeploymentRunPayload struct {
+	DeploymentID uuid.UUID              `json:"deployment_id"`
+	RunID        uuid.UUID              `json:"run_id"`
+	SessionID    *uuid.UUID             `json:"session_id,omitempty"`
+	Environment  map[string]string      `json:"environment,omitempty"`
+	Config       map[string]interface{} `json:"config,omitempty"`
+}
+
+func (p *DeploymentRunPayload) Marshal() ([]byte, error) {
+	return json.Marshal(p)
+}
+
+func (p *DeploymentRunPayload) Unmarshal(data []byte) error {
+	return json.Unmarshal(data, p)
+}
+
+func NewDeploymentRunTask(payload DeploymentRunPayload) (*asynq.Task, error) {
+	data, err := payload.Marshal()
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal payload: %w", err)
+	}
+	return asynq.NewTask(TypeDeploymentRun, data), nil
+}
+
+// DeploymentSchedulePayload represents the payload for a deployment schedule task
+type DeploymentSchedulePayload struct {
+	DeploymentID uuid.UUID              `json:"deployment_id"`
+	Schedule     string                 `json:"schedule"`
+	Environment  map[string]string      `json:"environment,omitempty"`
+	Config       map[string]interface{} `json:"config,omitempty"`
+}
+
+func (p *DeploymentSchedulePayload) Marshal() ([]byte, error) {
+	return json.Marshal(p)
+}
+
+func (p *DeploymentSchedulePayload) Unmarshal(data []byte) error {
+	return json.Unmarshal(data, p)
+}
+
+func NewDeploymentScheduleTask(payload DeploymentSchedulePayload) (*asynq.Task, error) {
+	data, err := payload.Marshal()
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal payload: %w", err)
+	}
+	return asynq.NewTask(TypeDeploymentSchedule, data), nil
 }
