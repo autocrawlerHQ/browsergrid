@@ -3,6 +3,8 @@ package config
 import (
 	"os"
 	"strconv"
+
+	"github.com/autocrawlerHQ/browsergrid/internal/storage"
 )
 
 type Config struct {
@@ -11,6 +13,7 @@ type Config struct {
 	RedisAddr     string
 	RedisPassword string
 	RedisDB       int
+	Storage       storage.Config // Add storage configuration
 }
 
 func Load() Config {
@@ -19,6 +22,12 @@ func Load() Config {
 		DatabaseURL: "postgres://user:password@localhost/browsergrid?sslmode=disable",
 		RedisAddr:   "localhost:6379",
 		RedisDB:     0,
+		Storage: storage.Config{
+			Provider: "local",
+			Settings: map[string]interface{}{
+				"bucket_url": "file:///var/lib/browsergrid/storage",
+			},
+		},
 	}
 
 	if v := os.Getenv("PORT"); v != "" {
@@ -40,6 +49,31 @@ func Load() Config {
 	if v := os.Getenv("REDIS_DB"); v != "" {
 		if db, err := strconv.Atoi(v); err == nil {
 			cfg.RedisDB = db
+		}
+	}
+
+	// Load storage configuration
+	if v := os.Getenv("STORAGE_PROVIDER"); v != "" {
+		cfg.Storage.Provider = v
+	}
+
+	if v := os.Getenv("STORAGE_BUCKET_URL"); v != "" {
+		cfg.Storage.Settings["bucket_url"] = v
+	}
+
+	// Provider-specific settings
+	switch cfg.Storage.Provider {
+	case "s3":
+		if v := os.Getenv("AWS_REGION"); v != "" {
+			cfg.Storage.Settings["region"] = v
+		}
+	case "azure":
+		if v := os.Getenv("AZURE_STORAGE_ACCOUNT"); v != "" {
+			cfg.Storage.Settings["account_name"] = v
+		}
+	case "gcs":
+		if v := os.Getenv("GCP_PROJECT_ID"); v != "" {
+			cfg.Storage.Settings["project_id"] = v
 		}
 	}
 

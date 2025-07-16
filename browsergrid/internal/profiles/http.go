@@ -157,9 +157,9 @@ func getProfile(deps Dependencies) gin.HandlerFunc {
 	}
 }
 
-// updateProfile updates profile metadata
+// updateProfile updates profile
 // @Summary Update a profile
-// @Description Update profile metadata (name, description)
+// @Description Update profile
 // @Tags profiles
 // @Accept json
 // @Produce json
