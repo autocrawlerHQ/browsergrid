@@ -1,0 +1,26 @@
+{
+  "name": ".",
+  "version": "1.0.0",
+  "runtime": "node",
+  "entry_point": "index.js",
+  "environment": {
+    "NODE_ENV": "production"
+  },
+  "config": {
+    "concurrency": 1,
+    "max_retries": 3,
+    "timeout_seconds": 300,
+    "browser_requests": [
+      {
+        "browser": "chrome",
+        "version": "latest",
+        "headless": true,
+        "operating_system": "linux",
+        "screen": {
+          "height": 1080,
+          "width": 1920
+        }
+      }
+    ]
+  }
+}

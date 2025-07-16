@@ -1,13 +1,15 @@
 import React from 'react';
-import { Globe, Layers, Activity } from 'lucide-react';
+import { Globe, Layers, Activity, Package } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useGetApiV1Sessions } from '@/lib/api/sessions/sessions';
 import { useGetApiV1Workpools } from '@/lib/api/workpools/workpools';
+import { useGetApiV1Deployments } from '@/lib/api/deployments/deployments';
 import { useQuery } from '@tanstack/react-query';
 
 export default function Overview() {
   const { data: sessions } = useGetApiV1Sessions();
   const { data: workpools } = useGetApiV1Workpools();
+  const { data: deployments } = useGetApiV1Deployments();
   
   // Fetch queue data from Asynqmon
   const { data: queuesData } = useQuery({
@@ -41,6 +43,13 @@ export default function Overview() {
       total: workpools?.total || 0,
       icon: Layers,
       color: 'text-green-600'
+    },
+    {
+      title: 'Deployments',
+      value: deployments?.deployments?.filter((d: any) => d.status === 'active').length || 0,
+      total: deployments?.total || 0,
+      icon: Package,
+      color: 'text-orange-600'
     },
     {
       title: 'Queued Tasks',

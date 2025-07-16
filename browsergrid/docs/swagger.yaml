@@ -30,11 +30,26 @@ definitions:
     - VerStable
     - VerCanary
     - VerDev
+  DeploymentStatus:
+    description: Current status of a deployment
+    enum:
+    - active
+    - inactive
+    - deploying
+    - failed
+    - deprecated
+    type: string
+    x-enum-varnames:
+    - StatusActive
+    - StatusInactive
+    - StatusDeploying
+    - StatusFailed
+    - StatusDeprecated
   ErrorResponse:
-    description: Standard error response format
+    description: Error response with details
     properties:
       error:
-        example: Invalid session ID
+        example: Validation failed
         type: string
     type: object
   MessageResponse:
@@ -92,6 +107,30 @@ definitions:
         example: 30
         type: integer
     type: object
+  RunStatus:
+    description: Current status of a deployment run
+    enum:
+    - pending
+    - running
+    - completed
+    - failed
+    - cancelled
+    type: string
+    x-enum-varnames:
+    - RunStatusPending
+    - RunStatusRunning
+    - RunStatusCompleted
+    - RunStatusFailed
+    - RunStatusCancelled
+  Runtime:
+    description: Supported deployment runtimes
+    enum:
+    - node
+    - python
+    type: string
+    x-enum-varnames:
+    - RuntimeNode
+    - RuntimePython
   ScalingRequest:
     description: Scaling parameters for updating work pool configuration
     properties:
@@ -455,6 +494,207 @@ definitions:
         example: 5
         type: integer
     type: object
+  internal_deployments.BrowserRequest:
+    description: Browser session configuration for deployment
+    properties:
+      browser:
+        type: string
+      environment:
+        additionalProperties:
+          type: string
+        type: object
+      headless:
+        type: boolean
+      operating_system:
+        type: string
+      profile_id:
+        type: string
+      screen:
+        additionalProperties: true
+        type: object
+      version:
+        type: string
+    type: object
+  internal_deployments.CreateDeploymentRequest:
+    properties:
+      config:
+        $ref: '#/definitions/internal_deployments.DeploymentConfig'
+      description:
+        type: string
+      name:
+        type: string
+      package_hash:
+        type: string
+      package_url:
+        type: string
+      runtime:
+        $ref: '#/definitions/Runtime'
+      version:
+        type: string
+    required:
+    - name
+    - package_hash
+    - package_url
+    - runtime
+    - version
+    type: object
+  internal_deployments.CreateDeploymentRunRequest:
+    properties:
+      config:
+        additionalProperties: true
+        type: object
+      environment:
+        additionalProperties:
+          type: string
+        type: object
+    type: object
+  internal_deployments.Deployment:
+    description: Deployment package with configuration and metadata
+    properties:
+      config:
+        items:
+          type: integer
+        type: array
+      created_at:
+        type: string
+      description:
+        type: string
+      failed_runs:
+        type: integer
+      id:
+        type: string
+      last_run_at:
+        type: string
+      name:
+        type: string
+      package_hash:
+        type: string
+      package_url:
+        type: string
+      runs:
+        description: Relationships
+        items:
+          $ref: '#/definitions/internal_deployments.DeploymentRun'
+        type: array
+      runtime:
+        $ref: '#/definitions/Runtime'
+      status:
+        $ref: '#/definitions/DeploymentStatus'
+      successful_runs:
+        type: integer
+      total_runs:
+        description: Computed fields
+        type: integer
+      updated_at:
+        type: string
+      version:
+        type: string
+    type: object
+  internal_deployments.DeploymentConfig:
+    description: Deployment configuration settings
+    properties:
+      browser_requests:
+        items:
+          $ref: '#/definitions/internal_deployments.BrowserRequest'
+        type: array
+      concurrency:
+        type: integer
+      environment:
+        additionalProperties:
+          type: string
+        type: object
+      max_retries:
+        type: integer
+      resource_limits:
+        additionalProperties: true
+        type: object
+      schedule:
+        type: string
+      timeout_seconds:
+        type: integer
+      trigger_events:
+        items:
+          type: string
+        type: array
+    type: object
+  internal_deployments.DeploymentListResponse:
+    properties:
+      deployments:
+        items:
+          $ref: '#/definitions/internal_deployments.Deployment'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  internal_deployments.DeploymentRun:
+    description: Deployment run with execution details and results
+    properties:
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      deployment:
+        allOf:
+        - $ref: '#/definitions/internal_deployments.Deployment'
+        description: Relationships
+      deployment_id:
+        type: string
+      duration_seconds:
+        description: Computed fields
+        type: integer
+      error:
+        type: string
+      id:
+        type: string
+      output:
+        items:
+          type: integer
+        type: array
+      session_id:
+        type: string
+      started_at:
+        type: string
+      status:
+        $ref: '#/definitions/RunStatus'
+      updated_at:
+        type: string
+    type: object
+  internal_deployments.DeploymentRunListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      runs:
+        items:
+          $ref: '#/definitions/internal_deployments.DeploymentRun'
+        type: array
+      total:
+        type: integer
+    type: object
+  internal_deployments.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  internal_deployments.MessageResponse:
+    properties:
+      message:
+        type: string
+    type: object
+  internal_deployments.UpdateDeploymentRequest:
+    properties:
+      config:
+        $ref: '#/definitions/internal_deployments.DeploymentConfig'
+      description:
+        type: string
+      status:
+        $ref: '#/definitions/DeploymentStatus'
+    type: object
   internal_profiles.CreateProfileRequest:
     properties:
       browser:
@@ -567,6 +807,275 @@ info:
   title: BrowserGrid API
   version: "2.0"
 paths:
+  /api/v1/deployments:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of all deployments with optional filtering
+      parameters:
+      - description: Filter by deployment status
+        in: query
+        name: status
+        type: string
+      - description: Filter by runtime
+        in: query
+        name: runtime
+        type: string
+      - default: 0
+        description: Number of deployments to skip
+        in: query
+        name: offset
+        type: integer
+      - default: 20
+        description: Maximum number of deployments to return
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of deployments
+          schema:
+            $ref: '#/definitions/internal_deployments.DeploymentListResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: List deployments
+      tags:
+      - deployments
+    post:
+      consumes:
+      - application/json
+      description: Create a new deployment package with specified configuration
+      parameters:
+      - description: Deployment configuration
+        in: body
+        name: deployment
+        required: true
+        schema:
+          $ref: '#/definitions/internal_deployments.CreateDeploymentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Deployment created successfully
+          schema:
+            $ref: '#/definitions/internal_deployments.Deployment'
+        "400":
+          description: Invalid request data
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: Create a new deployment
+      tags:
+      - deployments
+  /api/v1/deployments/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a deployment and all its runs
+      parameters:
+      - description: Deployment ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Deployment deleted successfully
+          schema:
+            $ref: '#/definitions/internal_deployments.MessageResponse'
+        "400":
+          description: Invalid deployment ID
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+        "404":
+          description: Deployment not found
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: Delete a deployment
+      tags:
+      - deployments
+    get:
+      consumes:
+      - application/json
+      description: Get detailed information about a specific deployment
+      parameters:
+      - description: Deployment ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Deployment details
+          schema:
+            $ref: '#/definitions/internal_deployments.Deployment'
+        "400":
+          description: Invalid deployment ID
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+        "404":
+          description: Deployment not found
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: Get a deployment
+      tags:
+      - deployments
+    patch:
+      consumes:
+      - application/json
+      description: Update deployment metadata and configuration
+      parameters:
+      - description: Deployment ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Deployment updates
+        in: body
+        name: deployment
+        required: true
+        schema:
+          $ref: '#/definitions/internal_deployments.UpdateDeploymentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Deployment updated successfully
+          schema:
+            $ref: '#/definitions/internal_deployments.Deployment'
+        "400":
+          description: Invalid request data
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+        "404":
+          description: Deployment not found
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: Update a deployment
+      tags:
+      - deployments
+  /api/v1/deployments/{id}/runs:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of runs for a specific deployment
+      parameters:
+      - description: Deployment ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Filter by run status
+        in: query
+        name: status
+        type: string
+      - default: 0
+        description: Number of runs to skip
+        in: query
+        name: offset
+        type: integer
+      - default: 20
+        description: Maximum number of runs to return
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of deployment runs
+          schema:
+            $ref: '#/definitions/internal_deployments.DeploymentRunListResponse'
+        "400":
+          description: Invalid deployment ID
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: List deployment runs
+      tags:
+      - deployments
+    post:
+      consumes:
+      - application/json
+      description: Trigger a manual run of a deployment
+      parameters:
+      - description: Deployment ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Deployment run configuration
+        in: body
+        name: run
+        required: true
+        schema:
+          $ref: '#/definitions/internal_deployments.CreateDeploymentRunRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Deployment run created successfully
+          schema:
+            $ref: '#/definitions/internal_deployments.DeploymentRun'
+        "400":
+          description: Invalid request data
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+        "404":
+          description: Deployment not found
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: Create a new deployment run
+      tags:
+      - deployments
+  /api/v1/deployments/{id}/stats:
+    get:
+      consumes:
+      - application/json
+      description: Get detailed statistics for a deployment
+      parameters:
+      - description: Deployment ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Deployment statistics
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid deployment ID
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+        "404":
+          description: Deployment not found
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: Get deployment statistics
+      tags:
+      - deployments
   /api/v1/events:
     get:
       consumes:
@@ -966,6 +1475,127 @@ paths:
       summary: Import a profile
       tags:
       - profiles
+  /api/v1/runs:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of all deployment runs across all deployments
+      parameters:
+      - description: Filter by run status
+        in: query
+        name: status
+        type: string
+      - default: 0
+        description: Number of runs to skip
+        in: query
+        name: offset
+        type: integer
+      - default: 20
+        description: Maximum number of runs to return
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of deployment runs
+          schema:
+            $ref: '#/definitions/internal_deployments.DeploymentRunListResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: List all deployment runs
+      tags:
+      - deployments
+  /api/v1/runs/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a deployment run
+      parameters:
+      - description: Run ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Run deleted successfully
+          schema:
+            $ref: '#/definitions/internal_deployments.MessageResponse'
+        "400":
+          description: Invalid run ID
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+        "404":
+          description: Run not found
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: Delete a deployment run
+      tags:
+      - deployments
+    get:
+      consumes:
+      - application/json
+      description: Get detailed information about a specific deployment run
+      parameters:
+      - description: Run ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Deployment run details
+          schema:
+            $ref: '#/definitions/internal_deployments.DeploymentRun'
+        "400":
+          description: Invalid run ID
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+        "404":
+          description: Run not found
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: Get a deployment run
+      tags:
+      - deployments
+  /api/v1/runs/{id}/logs:
+    get:
+      consumes:
+      - application/json
+      description: Get logs for a specific deployment run
+      parameters:
+      - description: Run ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Deployment run logs
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid run ID
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+        "404":
+          description: Run not found
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: Get deployment run logs
+      tags:
+      - deployments
   /api/v1/sessions:
     get:
       consumes:

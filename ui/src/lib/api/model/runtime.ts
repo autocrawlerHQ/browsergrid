@@ -7,8 +7,13 @@
  */
 
 /**
- * Error response with details
+ * Supported deployment runtimes
  */
-export interface ErrorResponse {
-  error?: string;
-}
+export type Runtime = typeof Runtime[keyof typeof Runtime];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const Runtime = {
+  RuntimeNode: 'node',
+  RuntimePython: 'python',
+} as const;

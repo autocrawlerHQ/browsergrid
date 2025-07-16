@@ -24,6 +24,410 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/v1/deployments": {
+            "get": {
+                "description": "Get a list of all deployments with optional filtering",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "List deployments",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by deployment status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by runtime",
+                        "name": "runtime",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Number of deployments to skip",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Maximum number of deployments to return",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of deployments",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.DeploymentListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new deployment package with specified configuration",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "Create a new deployment",
+                "parameters": [
+                    {
+                        "description": "Deployment configuration",
+                        "name": "deployment",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.CreateDeploymentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Deployment created successfully",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.Deployment"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request data",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/deployments/{id}": {
+            "get": {
+                "description": "Get detailed information about a specific deployment",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "Get a deployment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Deployment ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deployment details",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.Deployment"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid deployment ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Deployment not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a deployment and all its runs",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "Delete a deployment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Deployment ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deployment deleted successfully",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid deployment ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Deployment not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "Update deployment metadata and configuration",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "Update a deployment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Deployment ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Deployment updates",
+                        "name": "deployment",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.UpdateDeploymentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deployment updated successfully",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.Deployment"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request data",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Deployment not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/deployments/{id}/runs": {
+            "get": {
+                "description": "Get a list of runs for a specific deployment",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "List deployment runs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Deployment ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by run status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Number of runs to skip",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Maximum number of runs to return",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of deployment runs",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.DeploymentRunListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid deployment ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Trigger a manual run of a deployment",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "Create a new deployment run",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Deployment ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Deployment run configuration",
+                        "name": "run",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.CreateDeploymentRunRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Deployment run created successfully",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.DeploymentRun"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request data",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Deployment not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/deployments/{id}/stats": {
+            "get": {
+                "description": "Get detailed statistics for a deployment",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "Get deployment statistics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Deployment ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deployment statistics",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid deployment ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Deployment not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/events": {
             "get": {
                 "description": "Get a list of events for browser sessions with optional filtering by session ID, event type, time range, and pagination",
@@ -593,6 +997,188 @@ const docTemplate = `{
                         "description": "Internal server error",
                         "schema": {
                             "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/runs": {
+            "get": {
+                "description": "Get a list of all deployment runs across all deployments",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "List all deployment runs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by run status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Number of runs to skip",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Maximum number of runs to return",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of deployment runs",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.DeploymentRunListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/runs/{id}": {
+            "get": {
+                "description": "Get detailed information about a specific deployment run",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "Get a deployment run",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Run ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deployment run details",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.DeploymentRun"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid run ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Run not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a deployment run",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "Delete a deployment run",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Run ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Run deleted successfully",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid run ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Run not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/runs/{id}/logs": {
+            "get": {
+                "description": "Get logs for a specific deployment run",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "Get deployment run logs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Run ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deployment run logs",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid run ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Run not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
                         }
                     }
                 }
@@ -1443,13 +2029,31 @@ const docTemplate = `{
                 "VerDev"
             ]
         },
+        "DeploymentStatus": {
+            "description": "Current status of a deployment",
+            "type": "string",
+            "enum": [
+                "active",
+                "inactive",
+                "deploying",
+                "failed",
+                "deprecated"
+            ],
+            "x-enum-varnames": [
+                "StatusActive",
+                "StatusInactive",
+                "StatusDeploying",
+                "StatusFailed",
+                "StatusDeprecated"
+            ]
+        },
         "ErrorResponse": {
-            "description": "Standard error response format",
+            "description": "Error response with details",
             "type": "object",
             "properties": {
                 "error": {
                     "type": "string",
-                    "example": "Invalid session ID"
+                    "example": "Validation failed"
                 }
             }
         },
@@ -1526,6 +2130,36 @@ const docTemplate = `{
                     "example": 30
                 }
             }
+        },
+        "RunStatus": {
+            "description": "Current status of a deployment run",
+            "type": "string",
+            "enum": [
+                "pending",
+                "running",
+                "completed",
+                "failed",
+                "cancelled"
+            ],
+            "x-enum-varnames": [
+                "RunStatusPending",
+                "RunStatusRunning",
+                "RunStatusCompleted",
+                "RunStatusFailed",
+                "RunStatusCancelled"
+            ]
+        },
+        "Runtime": {
+            "description": "Supported deployment runtimes",
+            "type": "string",
+            "enum": [
+                "node",
+                "python"
+            ],
+            "x-enum-varnames": [
+                "RuntimeNode",
+                "RuntimePython"
+            ]
         },
         "ScalingRequest": {
             "description": "Scaling parameters for updating work pool configuration",
@@ -2010,6 +2644,308 @@ const docTemplate = `{
                 "total": {
                     "type": "integer",
                     "example": 5
+                }
+            }
+        },
+        "internal_deployments.BrowserRequest": {
+            "description": "Browser session configuration for deployment",
+            "type": "object",
+            "properties": {
+                "browser": {
+                    "type": "string"
+                },
+                "environment": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "headless": {
+                    "type": "boolean"
+                },
+                "operating_system": {
+                    "type": "string"
+                },
+                "profile_id": {
+                    "type": "string"
+                },
+                "screen": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_deployments.CreateDeploymentRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "package_hash",
+                "package_url",
+                "runtime",
+                "version"
+            ],
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/internal_deployments.DeploymentConfig"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "package_hash": {
+                    "type": "string"
+                },
+                "package_url": {
+                    "type": "string"
+                },
+                "runtime": {
+                    "$ref": "#/definitions/Runtime"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_deployments.CreateDeploymentRunRequest": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "environment": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_deployments.Deployment": {
+            "description": "Deployment package with configuration and metadata",
+            "type": "object",
+            "properties": {
+                "config": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "failed_runs": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "package_hash": {
+                    "type": "string"
+                },
+                "package_url": {
+                    "type": "string"
+                },
+                "runs": {
+                    "description": "Relationships",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_deployments.DeploymentRun"
+                    }
+                },
+                "runtime": {
+                    "$ref": "#/definitions/Runtime"
+                },
+                "status": {
+                    "$ref": "#/definitions/DeploymentStatus"
+                },
+                "successful_runs": {
+                    "type": "integer"
+                },
+                "total_runs": {
+                    "description": "Computed fields",
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_deployments.DeploymentConfig": {
+            "description": "Deployment configuration settings",
+            "type": "object",
+            "properties": {
+                "browser_requests": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_deployments.BrowserRequest"
+                    }
+                },
+                "concurrency": {
+                    "type": "integer"
+                },
+                "environment": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "max_retries": {
+                    "type": "integer"
+                },
+                "resource_limits": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "schedule": {
+                    "type": "string"
+                },
+                "timeout_seconds": {
+                    "type": "integer"
+                },
+                "trigger_events": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_deployments.DeploymentListResponse": {
+            "type": "object",
+            "properties": {
+                "deployments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_deployments.Deployment"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_deployments.DeploymentRun": {
+            "description": "Deployment run with execution details and results",
+            "type": "object",
+            "properties": {
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "deployment": {
+                    "description": "Relationships",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/internal_deployments.Deployment"
+                        }
+                    ]
+                },
+                "deployment_id": {
+                    "type": "string"
+                },
+                "duration_seconds": {
+                    "description": "Computed fields",
+                    "type": "integer"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "output": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "session_id": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/RunStatus"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_deployments.DeploymentRunListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "runs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_deployments.DeploymentRun"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_deployments.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_deployments.MessageResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_deployments.UpdateDeploymentRequest": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/internal_deployments.DeploymentConfig"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/DeploymentStatus"
                 }
             }
         },

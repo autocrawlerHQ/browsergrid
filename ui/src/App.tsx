@@ -7,6 +7,8 @@ import Sessions from '@/pages/Sessions'
 import SessionDetails from '@/pages/SessionDetails'
 import Profiles from '@/pages/Profiles'
 import WorkPools from '@/pages/WorkPools'
+import Deployments from '@/pages/Deployments'
+import DeploymentDetails from '@/pages/DeploymentDetails'
 import Queue from '@/pages/Queue'
 //import ScheduledTasks from '@/pages/ScheduledTasks'
 import Webhooks from '@/pages/Webhooks'
@@ -23,6 +25,8 @@ const router = createBrowserRouter([
       { path: 'sessions/:id', element: <SessionDetails /> },
       { path: 'profiles', element: <Profiles /> },
       { path: 'workpools', element: <WorkPools /> },
+      { path: 'deployments', element: <Deployments /> },
+      { path: 'deployments/:id', element: <DeploymentDetails /> },
       { path: 'queue', element: <Queue /> },
       //{ path: 'scheduled-tasks', element: <ScheduledTasks /> },
       { path: 'webhooks', element: <Webhooks /> },

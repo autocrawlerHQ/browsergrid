@@ -14,7 +14,8 @@ import {
   ListTodo, 
   //Clock,
   Webhook,
-  User
+  User,
+  Package
 } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -25,6 +26,7 @@ const tabItems = [
   { id: 'sessions', label: 'Browser Sessions', icon: Globe, path: '/sessions' },
   { id: 'profiles', label: 'Profiles', icon: User, path: '/profiles' },
   { id: 'workpools', label: 'Work Pools', icon: Layers, path: '/workpools' },
+  { id: 'deployments', label: 'Deployments', icon: Package, path: '/deployments' },
   { id: 'queue', label: 'Queue', icon: ListTodo, path: '/queue' },
   //{ id: 'scheduled-tasks', label: 'Scheduled Tasks', icon: Clock, path: '/scheduled-tasks' },
   { id: 'webhooks', label: 'Webhooks', icon: Webhook, path: '/webhooks' }

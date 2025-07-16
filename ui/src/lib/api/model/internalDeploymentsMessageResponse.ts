@@ -6,9 +6,6 @@
  * OpenAPI spec version: 2.0
  */
 
-/**
- * Error response with details
- */
-export interface ErrorResponse {
-  error?: string;
+export interface InternalDeploymentsMessageResponse {
+  message?: string;
 }

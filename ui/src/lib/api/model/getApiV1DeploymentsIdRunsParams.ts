@@ -6,9 +6,17 @@
  * OpenAPI spec version: 2.0
  */
 
+export type GetApiV1DeploymentsIdRunsParams = {
 /**
- * Error response with details
+ * Filter by run status
  */
-export interface ErrorResponse {
-  error?: string;
-}
+status?: string;
+/**
+ * Number of runs to skip
+ */
+offset?: number;
+/**
+ * Maximum number of runs to return
+ */
+limit?: number;
+};
