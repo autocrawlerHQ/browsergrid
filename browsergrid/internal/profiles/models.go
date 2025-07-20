@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
 	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
@@ -16,6 +17,7 @@ const (
 	maxProfileSize = 1 << 30 // 1GB
 )
 
+// StorageBackend represents the storage backend type for profiles
 type StorageBackend string
 
 const (
@@ -31,6 +33,7 @@ type Profile struct {
 	Browser        sessions.Browser `json:"browser" gorm:"not null"`
 	SizeBytes      int64            `json:"size_bytes" gorm:"default:0"`
 	StorageBackend StorageBackend   `json:"storage_backend"`
+	Metadata       datatypes.JSON   `json:"metadata"`
 	CreatedAt      time.Time        `json:"created_at" gorm:"not null"`
 	UpdatedAt      time.Time        `json:"updated_at" gorm:"not null"`
 	LastUsedAt     *time.Time       `json:"last_used_at"`
@@ -60,6 +63,10 @@ func (p *Profile) BeforeCreate(tx *gorm.DB) error {
 
 	if p.StorageBackend == "" {
 		p.StorageBackend = StorageBackendLocal
+	}
+
+	if p.Metadata == nil {
+		p.Metadata = datatypes.JSON("{}")
 	}
 
 	return nil

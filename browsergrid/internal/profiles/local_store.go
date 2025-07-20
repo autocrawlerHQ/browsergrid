@@ -3,15 +3,18 @@ package profiles
 import (
 	"archive/zip"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
 	defaultLocalProfilesPath = "/var/lib/browsergrid/profiles"
+	localMetadataFileName    = "metadata.json"
 	localUserDataDirName     = "user-data"
 	localMaxProfileSize      = 1 << 30 // 1GB
 )
@@ -60,7 +63,15 @@ func (s *LocalProfileStore) InitializeProfile(ctx context.Context, profileID str
 		fmt.Printf("Warning: Could not set proper ownership for profile %s: %v\n", profileID, err)
 	}
 
-	return nil
+	// Write initial metadata
+	metadata := LocalProfileMetadata{
+		Version:      1,
+		CreatedAt:    time.Now(),
+		LastModified: time.Now(),
+		SizeBytes:    0,
+	}
+
+	return s.writeMetadata(profilePath, metadata)
 }
 
 // ImportProfile imports profile data from a ZIP archive
@@ -111,7 +122,15 @@ func (s *LocalProfileStore) ImportProfile(ctx context.Context, profileID string,
 		fmt.Printf("Warning: Could not set proper ownership for imported profile %s: %v\n", profileID, err)
 	}
 
-	return nil
+	// Update metadata
+	metadata := LocalProfileMetadata{
+		Version:      1,
+		CreatedAt:    time.Now(),
+		LastModified: time.Now(),
+		SizeBytes:    size,
+	}
+
+	return s.writeMetadata(profilePath, metadata)
 }
 
 // GetProfilePath returns the filesystem path for mounting
@@ -130,8 +149,26 @@ func (s *LocalProfileStore) GetProfilePath(ctx context.Context, profileID string
 // SaveProfileData is a no-op for local store since data is already persisted via volume mounts
 func (s *LocalProfileStore) SaveProfileData(ctx context.Context, profileID string, sourcePath string) error {
 	// With direct volume mounting, the data is already persisted in the correct location
-	// No additional action needed
-	return nil
+	// We just need to update the metadata
+	profilePath := s.getProfilePath(profileID)
+	userDataPath := filepath.Join(profilePath, localUserDataDirName)
+
+	// Calculate current size
+	size, _ := s.calculateDirectorySize(userDataPath)
+
+	// Update metadata
+	metadata := LocalProfileMetadata{
+		Version:      1,
+		LastModified: time.Now(),
+		SizeBytes:    size,
+	}
+
+	// Read existing metadata to preserve created_at
+	if existing, err := s.readMetadata(profilePath); err == nil {
+		metadata.CreatedAt = existing.CreatedAt
+	}
+
+	return s.writeMetadata(profilePath, metadata)
 }
 
 // ExportProfile exports profile data as a ZIP archive
@@ -226,6 +263,33 @@ func (s *LocalProfileStore) ensureProperOwnership(profilePath, userDataPath stri
 		}
 		return os.Chown(path, browserUID, browserGID)
 	})
+}
+
+func (s *LocalProfileStore) writeMetadata(profilePath string, metadata LocalProfileMetadata) error {
+	metadataPath := filepath.Join(profilePath, localMetadataFileName)
+
+	data, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal metadata: %w", err)
+	}
+
+	return os.WriteFile(metadataPath, data, 0644)
+}
+
+func (s *LocalProfileStore) readMetadata(profilePath string) (*LocalProfileMetadata, error) {
+	metadataPath := filepath.Join(profilePath, localMetadataFileName)
+
+	data, err := os.ReadFile(metadataPath)
+	if err != nil {
+		return nil, fmt.Errorf("read metadata: %w", err)
+	}
+
+	var metadata LocalProfileMetadata
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return nil, fmt.Errorf("unmarshal metadata: %w", err)
+	}
+
+	return &metadata, nil
 }
 
 func (s *LocalProfileStore) validateProfileStructure(profilePath string) error {
@@ -340,6 +404,15 @@ func (s *LocalProfileStore) createZip(sourcePath string, zipFile *os.File) error
 		_, err = io.Copy(writer, file)
 		return err
 	})
+}
+
+// LocalProfileMetadata represents metadata stored with each profile
+type LocalProfileMetadata struct {
+	Version      int       `json:"version"`
+	CreatedAt    time.Time `json:"created_at"`
+	LastModified time.Time `json:"last_modified"`
+	SizeBytes    int64     `json:"size_bytes"`
+	Browser      string    `json:"browser,omitempty"`
 }
 
 // localExportReader wraps an os.File and deletes the temp file on Close
