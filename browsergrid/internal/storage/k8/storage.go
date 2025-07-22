@@ -12,6 +12,7 @@ import (
 	"k8s.io/client-go/rest"
 
 	"github.com/autocrawlerHQ/browsergrid/internal/storage"
+	k8sresource "k8s.io/apimachinery/pkg/api/resource"
 )
 
 type Config struct {
@@ -32,10 +33,8 @@ type KubernetesStorage struct {
 func NewKubernetesStorage(config Config) (*KubernetesStorage, error) {
 	kubeConfig, err := rest.InClusterConfig()
 	if err != nil {
-		kubeConfig, err = rest.NewForConfig(&rest.Config{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create kubernetes config: %w", err)
-		}
+		// Fallback to default config for out-of-cluster usage
+		kubeConfig = &rest.Config{}
 	}
 
 	client, err := kubernetes.NewForConfig(kubeConfig)
@@ -84,9 +83,9 @@ func (s *KubernetesStorage) Initialize(ctx context.Context, resource *storage.Re
 			AccessModes: []corev1.PersistentVolumeAccessMode{
 				s.getAccessMode(),
 			},
-			Resources: corev1.ResourceRequirements{
+			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: resource.MustParse(s.config.VolumeSize),
+					corev1.ResourceStorage: k8sresource.MustParse(s.config.VolumeSize),
 				},
 			},
 		},

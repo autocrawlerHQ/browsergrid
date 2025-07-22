@@ -47,11 +47,7 @@ func NewKubernetesProvisioner(config Config, storageConfig kstorage.Config) (*Ku
 	// Create Kubernetes client
 	kubeConfig, err := rest.InClusterConfig()
 	if err != nil {
-		// Fall back to kubeconfig
-		kubeConfig, err = rest.NewForConfig(&rest.Config{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create kubernetes config: %w", err)
-		}
+		return nil, fmt.Errorf("failed to create kubernetes config: %w", err)
 	}
 
 	client, err := kubernetes.NewForConfig(kubeConfig)
@@ -115,7 +111,7 @@ func (p *KubernetesProvisioner) Start(ctx context.Context, sess *sessions.Sessio
 
 	// Create a service to expose the browser
 	service := p.createBrowserService(sess)
-	createdService, err := p.client.CoreV1().Services(p.config.Namespace).Create(ctx, service, metav1.CreateOptions{})
+	_, err = p.client.CoreV1().Services(p.config.Namespace).Create(ctx, service, metav1.CreateOptions{})
 	if err != nil {
 		// Clean up job
 		p.client.BatchV1().Jobs(p.config.Namespace).Delete(ctx, createdJob.Name, metav1.DeleteOptions{})
@@ -245,8 +241,6 @@ func (p *KubernetesProvisioner) createBrowserJob(sess *sessions.Session, profile
 
 	// Add profile volume if specified
 	if profileResource != nil {
-		kstorage := p.storage.(*kstorage.KubernetesStorage)
-
 		// Add volume
 		volumes = append(volumes, corev1.Volume{
 			Name: "profile",
@@ -338,7 +332,6 @@ func (p *KubernetesProvisioner) createBrowserJob(sess *sessions.Session, profile
 		podSpec.SecurityContext = &corev1.PodSecurityContext{
 			RunAsUser:  p.config.SecurityContext.RunAsUser,
 			RunAsGroup: p.config.SecurityContext.RunAsGroup,
-			FSGroup:    p.config.SecurityContext.FSGroup,
 		}
 	}
 
