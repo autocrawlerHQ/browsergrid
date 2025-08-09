@@ -58,7 +58,8 @@ func New(database *db.DB, reconciler *poolmgr.Reconciler, taskClient *asynq.Clie
 
 		// Initialize profiles
 		profileStore := profiles.NewStore(database.DB)
-		localProfileStore, err := profiles.NewLocalProfileStore("")
+		// Resolve profile storage backend from env/config
+		resolvedProfileStore, err := profiles.ResolveFromEnv()
 		if err != nil {
 			panic("failed to initialize profile store: " + err.Error())
 		}
@@ -80,7 +81,7 @@ func New(database *db.DB, reconciler *poolmgr.Reconciler, taskClient *asynq.Clie
 		profileDeps := profiles.Dependencies{
 			DB:           database.DB,
 			Store:        profileStore,
-			ProfileStore: localProfileStore,
+			ProfileStore: resolvedProfileStore,
 		}
 		profiles.RegisterRoutes(v1, profileDeps)
 

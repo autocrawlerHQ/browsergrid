@@ -40,6 +40,13 @@ func NewLocalProfileStore(basePath string) (*LocalProfileStore, error) {
 	}, nil
 }
 
+func init() {
+	// Register the local backend so callers can resolve by backend type
+	RegisterBackend(BackendLocal, func(opts StorageOptions) (ProfileStore, error) {
+		return NewLocalProfileStore(opts.LocalPath)
+	})
+}
+
 // InitializeProfile creates an empty profile directory
 func (s *LocalProfileStore) InitializeProfile(ctx context.Context, profileID string) error {
 	profilePath := s.getProfilePath(profileID)

@@ -179,7 +179,6 @@ func TestCreateProfile(t *testing.T) {
 				assert.Equal(t, tt.requestBody.Name, response.Name)
 				assert.Equal(t, tt.requestBody.Description, response.Description)
 				assert.Equal(t, tt.requestBody.Browser, response.Browser)
-				assert.Equal(t, StorageBackendLocal, response.StorageBackend)
 			} else if tt.expectedError != "" {
 				var errorResp ErrorResponse
 				err := json.Unmarshal(w.Body.Bytes(), &errorResp)

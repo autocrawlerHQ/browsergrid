@@ -45,7 +45,7 @@ func main() {
 
 	sessStore := sessions.NewStore(db)
 	profileStore := profiles.NewStore(db)
-	localProfileStore, err := profiles.NewLocalProfileStore("")
+	resolvedProfileStore, err := profiles.ResolveFromEnv()
 	if err != nil {
 		log.Fatal("[STARTUP] ✗ Failed to initialize profile store:", err)
 	}
@@ -73,7 +73,7 @@ func main() {
 	mux := asynq.NewServeMux()
 
 	mux.HandleFunc(tasks.TypeSessionStart, handleSessionStart(sessStore, prov))
-	mux.HandleFunc(tasks.TypeSessionStop, handleSessionStop(sessStore, prov, profileStore, localProfileStore))
+	mux.HandleFunc(tasks.TypeSessionStop, handleSessionStop(sessStore, prov, profileStore, resolvedProfileStore))
 	mux.HandleFunc(tasks.TypeSessionHealthCheck, handleSessionHealthCheck(sessStore, prov))
 	mux.HandleFunc(tasks.TypeSessionTimeout, handleSessionTimeout(sessStore, prov, cfg.RedisAddr))
 	mux.HandleFunc(tasks.TypeDeploymentRun, handleDeploymentRun(deploymentRunner))

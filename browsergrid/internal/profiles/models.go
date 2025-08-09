@@ -17,26 +17,17 @@ const (
 	maxProfileSize = 1 << 30 // 1GB
 )
 
-// StorageBackend represents the storage backend type for profiles
-type StorageBackend string
-
-const (
-	StorageBackendLocal StorageBackend = "local"
-	StorageBackendS3    StorageBackend = "s3"
-)
-
 // Profile represents a reusable browser profile with saved state
 type Profile struct {
-	ID             uuid.UUID        `json:"id" gorm:"type:uuid;primary_key"`
-	Name           string           `json:"name" gorm:"not null;index"`
-	Description    string           `json:"description"`
-	Browser        sessions.Browser `json:"browser" gorm:"not null"`
-	SizeBytes      int64            `json:"size_bytes" gorm:"default:0"`
-	StorageBackend StorageBackend   `json:"storage_backend"`
-	Metadata       datatypes.JSON   `json:"metadata"`
-	CreatedAt      time.Time        `json:"created_at" gorm:"not null"`
-	UpdatedAt      time.Time        `json:"updated_at" gorm:"not null"`
-	LastUsedAt     *time.Time       `json:"last_used_at"`
+	ID          uuid.UUID        `json:"id" gorm:"type:uuid;primary_key"`
+	Name        string           `json:"name" gorm:"not null;index"`
+	Description string           `json:"description"`
+	Browser     sessions.Browser `json:"browser" gorm:"not null"`
+	SizeBytes   int64            `json:"size_bytes" gorm:"default:0"`
+	Metadata    datatypes.JSON   `json:"metadata"`
+	CreatedAt   time.Time        `json:"created_at" gorm:"not null"`
+	UpdatedAt   time.Time        `json:"updated_at" gorm:"not null"`
+	LastUsedAt  *time.Time       `json:"last_used_at"`
 
 	// Computed fields
 	ActiveSessions int `json:"active_sessions" gorm:"-"`
@@ -61,10 +52,6 @@ func (p *Profile) BeforeCreate(tx *gorm.DB) error {
 		p.UpdatedAt = now
 	}
 
-	if p.StorageBackend == "" {
-		p.StorageBackend = StorageBackendLocal
-	}
-
 	if p.Metadata == nil {
 		p.Metadata = datatypes.JSON("{}")
 	}
@@ -78,7 +65,6 @@ func (p *Profile) BeforeUpdate(tx *gorm.DB) error {
 	return nil
 }
 
-// ProfileStore defines the interface for profile storage operations
 type ProfileStore interface {
 	// InitializeProfile creates an empty profile directory
 	InitializeProfile(ctx context.Context, profileID string) error

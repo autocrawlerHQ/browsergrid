@@ -58,10 +58,9 @@ func createProfile(deps Dependencies) gin.HandlerFunc {
 		}
 
 		profile := &Profile{
-			Name:           req.Name,
-			Description:    req.Description,
-			Browser:        req.Browser,
-			StorageBackend: StorageBackendLocal,
+			Name:        req.Name,
+			Description: req.Description,
+			Browser:     req.Browser,
 		}
 
 		// Create profile in database
@@ -322,10 +321,9 @@ func importProfile(deps Dependencies) gin.HandlerFunc {
 		}
 
 		profile := &Profile{
-			Name:           req.Name,
-			Description:    req.Description,
-			Browser:        req.Browser,
-			StorageBackend: StorageBackendLocal,
+			Name:        req.Name,
+			Description: req.Description,
+			Browser:     req.Browser,
 		}
 
 		// Create profile in database
