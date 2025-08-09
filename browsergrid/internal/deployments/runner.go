@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,7 +28,6 @@ type DeploymentRunner struct {
 	store     *Store
 	sessStore SessionsStore
 	workDir   string
-	artifacts ArtifactStore
 }
 
 // NewDeploymentRunner creates a new deployment runner
@@ -39,7 +40,6 @@ func NewDeploymentRunner(db *gorm.DB, workDir string) *DeploymentRunner {
 		store:     NewStore(db),
 		sessStore: sessions.NewStore(db),
 		workDir:   workDir,
-		artifacts: NewHTTPArtifactStore(workDir),
 	}
 }
 
@@ -189,7 +189,7 @@ func (r *DeploymentRunner) createBrowserSession(ctx context.Context, deployment 
 // executeDeploymentPackage executes the deployment package
 func (r *DeploymentRunner) executeDeploymentPackage(ctx context.Context, deployment *Deployment, run *DeploymentRun, sessionID *uuid.UUID) (map[string]interface{}, error) {
 	// Download deployment package
-	packagePath, err := r.artifacts.Fetch(ctx, deployment.PackageURL, deployment.PackageHash)
+	packagePath, err := r.downloadPackage(ctx, deployment.PackageURL, deployment.PackageHash)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download package: %w", err)
 	}
@@ -226,7 +226,47 @@ func (r *DeploymentRunner) executeDeploymentPackage(ctx context.Context, deploym
 	}
 }
 
-// downloadPackage moved into ArtifactStore implementations
+// downloadPackage downloads the deployment package
+func (r *DeploymentRunner) downloadPackage(ctx context.Context, packageURL, expectedHash string) (string, error) {
+	// Create temporary directory for the package
+	tmpDir := filepath.Join(r.workDir, "packages")
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create temp directory: %w", err)
+	}
+
+	// Download the package
+	req, err := http.NewRequestWithContext(ctx, "GET", packageURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to download package: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to download package: status %d", resp.StatusCode)
+	}
+
+	// Save to temporary file
+	packagePath := filepath.Join(tmpDir, fmt.Sprintf("package-%s-%s.zip", expectedHash, uuid.New().String()))
+	file, err := os.Create(packagePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to create package file: %w", err)
+	}
+	defer file.Close()
+
+	if _, err := io.Copy(file, resp.Body); err != nil {
+		return "", fmt.Errorf("failed to save package: %w", err)
+	}
+
+	// TODO: Verify package hash
+	// In a full implementation, you would calculate the hash and compare with expectedHash
+
+	return packagePath, nil
+}
 
 // extractPackage extracts the deployment package
 func (r *DeploymentRunner) extractPackage(packagePath string) (string, error) {

@@ -32,7 +32,7 @@ type DockerProvisioner struct {
 
 	defaultPort   int
 	healthTimeout time.Duration
-	profileStore  profiles.ProfileStore
+	profileStore  *profiles.LocalProfileStore
 }
 
 func NewDockerProvisioner() *DockerProvisioner {
@@ -41,8 +41,7 @@ func NewDockerProvisioner() *DockerProvisioner {
 		panic(fmt.Errorf("docker client: %w", err))
 	}
 
-	// Resolve profile storage backend
-	profileStore, err := profiles.ResolveFromEnv()
+	profileStore, err := profiles.NewLocalProfileStore("")
 	if err != nil {
 		panic(fmt.Errorf("profile store: %w", err))
 	}
