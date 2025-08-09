@@ -291,8 +291,10 @@ func getQueueNameForProvider(provider workpool.ProviderType) string {
 	switch provider {
 	case workpool.ProviderDocker:
 		return "default"
-	case workpool.ProviderK8s:
-		return "k8s"
+	case workpool.ProviderACI:
+		return "azure"
+	case workpool.ProviderLocal:
+		return "local"
 	default:
 		return "default"
 	}
