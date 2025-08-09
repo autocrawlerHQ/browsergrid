@@ -533,10 +533,8 @@ func getQueueName(provider ProviderType) string {
 	switch provider {
 	case ProviderDocker:
 		return "default"
-	case ProviderACI:
-		return "azure"
-	case ProviderLocal:
-		return "local"
+	case ProviderK8s:
+		return "k8s"
 	default:
 		return "default"
 	}
@@ -552,6 +550,5 @@ type ProviderType string
 
 const (
 	ProviderDocker ProviderType = "docker"
-	ProviderACI    ProviderType = "azure_aci"
-	ProviderLocal  ProviderType = "local"
+	ProviderK8s    ProviderType = "k8s"
 )

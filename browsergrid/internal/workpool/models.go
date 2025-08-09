@@ -13,8 +13,7 @@ type ProviderType string //@name ProviderType
 
 const (
 	ProviderDocker ProviderType = "docker"
-	ProviderACI    ProviderType = "azure_aci"
-	ProviderLocal  ProviderType = "local"
+	ProviderK8s    ProviderType = "k8s"
 )
 
 // WorkPool represents a work pool for managing browser workers
@@ -23,7 +22,7 @@ type WorkPool struct {
 	ID          uuid.UUID    `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
 	Name        string       `json:"name" example:"Chrome Workers"`
 	Description string       `json:"description" example:"Pool for Chrome browser workers"`
-	Provider    ProviderType `json:"provider" example:"docker"`
+	Provider    ProviderType `json:"provider" example:"k8s"`
 
 	MinSize            int  `json:"min_size" example:"0"`
 	MaxConcurrency     int  `json:"max_concurrency" example:"10"`
