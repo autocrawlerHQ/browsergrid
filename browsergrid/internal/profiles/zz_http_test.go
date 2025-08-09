@@ -5,14 +5,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -25,76 +23,7 @@ import (
 	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
 )
 
-// MockProfileStore implements ProfileStore for testing
-type MockProfileStore struct {
-	profiles map[string]*Profile
-	errors   map[string]error
-}
-
-func NewMockProfileStore() *MockProfileStore {
-	return &MockProfileStore{
-		profiles: make(map[string]*Profile),
-		errors:   make(map[string]error),
-	}
-}
-
-func (m *MockProfileStore) InitializeProfile(ctx context.Context, profileID string) error {
-	if err, exists := m.errors["InitializeProfile"]; exists {
-		return err
-	}
-	return nil
-}
-
-func (m *MockProfileStore) ImportProfile(ctx context.Context, profileID string, zipData io.Reader) error {
-	if err, exists := m.errors["ImportProfile"]; exists {
-		return err
-	}
-	return nil
-}
-
-func (m *MockProfileStore) GetProfilePath(ctx context.Context, profileID string) (string, error) {
-	if err, exists := m.errors["GetProfilePath"]; exists {
-		return "", err
-	}
-	return fmt.Sprintf("/var/lib/browsergrid/profiles/%s/user-data", profileID), nil
-}
-
-func (m *MockProfileStore) SaveProfileData(ctx context.Context, profileID string, sourcePath string) error {
-	if err, exists := m.errors["SaveProfileData"]; exists {
-		return err
-	}
-	return nil
-}
-
-func (m *MockProfileStore) ExportProfile(ctx context.Context, profileID string) (io.ReadCloser, error) {
-	if err, exists := m.errors["ExportProfile"]; exists {
-		return nil, err
-	}
-	return io.NopCloser(strings.NewReader("mock profile data")), nil
-}
-
-func (m *MockProfileStore) DeleteProfile(ctx context.Context, profileID string) error {
-	if err, exists := m.errors["DeleteProfile"]; exists {
-		return err
-	}
-	return nil
-}
-
-func (m *MockProfileStore) GetProfileSize(ctx context.Context, profileID string) (int64, error) {
-	if err, exists := m.errors["GetProfileSize"]; exists {
-		return 0, err
-	}
-	return 1024, nil
-}
-
-func (m *MockProfileStore) ValidateProfile(ctx context.Context, profileID string) error {
-	if err, exists := m.errors["ValidateProfile"]; exists {
-		return err
-	}
-	return nil
-}
-
-func setupTestRouter(t *testing.T) (*gin.Engine, *Store, *MockProfileStore) {
+func setupTestRouter(t *testing.T) (*gin.Engine, *Store) {
 	gin.SetMode(gin.TestMode)
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -104,24 +33,22 @@ func setupTestRouter(t *testing.T) (*gin.Engine, *Store, *MockProfileStore) {
 	require.NoError(t, err)
 
 	store := NewStore(db)
-	mockProfileStore := NewMockProfileStore()
 
 	router := gin.New()
 	api := router.Group("/api/v1")
 
 	deps := Dependencies{
-		DB:           db,
-		Store:        store,
-		ProfileStore: mockProfileStore,
+		DB:    db,
+		Store: store,
 	}
 
 	RegisterRoutes(api, deps)
 
-	return router, store, mockProfileStore
+	return router, store
 }
 
 func TestCreateProfile(t *testing.T) {
-	router, _, _ := setupTestRouter(t)
+	router, _ := setupTestRouter(t)
 
 	tests := []struct {
 		name           string
@@ -190,7 +117,7 @@ func TestCreateProfile(t *testing.T) {
 }
 
 func TestListProfiles(t *testing.T) {
-	router, store, _ := setupTestRouter(t)
+	router, store := setupTestRouter(t)
 	ctx := context.Background()
 
 	// Create test profiles
@@ -254,7 +181,7 @@ func TestListProfiles(t *testing.T) {
 }
 
 func TestGetProfile(t *testing.T) {
-	router, store, _ := setupTestRouter(t)
+	router, store := setupTestRouter(t)
 	ctx := context.Background()
 
 	profile := &Profile{
@@ -317,7 +244,7 @@ func TestGetProfile(t *testing.T) {
 }
 
 func TestUpdateProfile(t *testing.T) {
-	router, store, _ := setupTestRouter(t)
+	router, store := setupTestRouter(t)
 	ctx := context.Background()
 
 	profile := &Profile{
@@ -398,7 +325,7 @@ func TestUpdateProfile(t *testing.T) {
 }
 
 func TestDeleteProfile(t *testing.T) {
-	router, store, _ := setupTestRouter(t)
+	router, store := setupTestRouter(t)
 	ctx := context.Background()
 
 	profile := &Profile{
@@ -459,7 +386,7 @@ func TestDeleteProfile(t *testing.T) {
 }
 
 func TestImportProfile(t *testing.T) {
-	router, _, mockProfileStore := setupTestRouter(t)
+	router, _ := setupTestRouter(t)
 
 	// Create a temporary ZIP file for testing
 	tempDir := t.TempDir()
@@ -483,7 +410,6 @@ func TestImportProfile(t *testing.T) {
 		filePath       string
 		expectedStatus int
 		expectedError  string
-		setupMock      func()
 	}{
 		{
 			name: "valid profile import",
@@ -504,28 +430,12 @@ func TestImportProfile(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 			expectedError:  "file is required",
 		},
-		{
-			name: "import error",
-			formData: map[string]string{
-				"name":    "imported-profile-3",
-				"browser": "chrome",
-			},
-			filePath:       zipPath,
-			expectedStatus: http.StatusBadRequest,
-			expectedError:  "failed to import profile",
-			setupMock: func() {
-				mockProfileStore.errors["ImportProfile"] = fmt.Errorf("import failed")
-			},
-		},
+		// Import errors are handled by validation and DB operations in current implementation
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Reset mock errors
-			mockProfileStore.errors = make(map[string]error)
-			if tt.setupMock != nil {
-				tt.setupMock()
-			}
+			// No mocks required
 
 			var body bytes.Buffer
 			writer := multipart.NewWriter(&body)
@@ -577,82 +487,7 @@ func TestImportProfile(t *testing.T) {
 	}
 }
 
-func TestExportProfile(t *testing.T) {
-	router, store, mockProfileStore := setupTestRouter(t)
-	ctx := context.Background()
-
-	profile := &Profile{
-		Name:        "test-profile",
-		Description: "Test profile for export",
-		Browser:     sessions.BrowserChrome,
-	}
-
-	err := store.CreateProfile(ctx, profile)
-	require.NoError(t, err)
-
-	tests := []struct {
-		name           string
-		profileID      string
-		expectedStatus int
-		expectedError  string
-		setupMock      func()
-	}{
-		{
-			name:           "valid profile export",
-			profileID:      profile.ID.String(),
-			expectedStatus: http.StatusOK,
-		},
-		{
-			name:           "invalid UUID",
-			profileID:      "invalid-uuid",
-			expectedStatus: http.StatusBadRequest,
-			expectedError:  "invalid profile ID",
-		},
-		{
-			name:           "non-existent profile",
-			profileID:      uuid.New().String(),
-			expectedStatus: http.StatusNotFound,
-			expectedError:  "profile not found",
-		},
-		{
-			name:           "export error",
-			profileID:      profile.ID.String(),
-			expectedStatus: http.StatusInternalServerError,
-			expectedError:  "failed to export profile",
-			setupMock: func() {
-				mockProfileStore.errors["ExportProfile"] = fmt.Errorf("export failed")
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Reset mock errors
-			mockProfileStore.errors = make(map[string]error)
-			if tt.setupMock != nil {
-				tt.setupMock()
-			}
-
-			req := httptest.NewRequest("GET", "/api/v1/profiles/"+tt.profileID+"/export", nil)
-			w := httptest.NewRecorder()
-			router.ServeHTTP(w, req)
-
-			assert.Equal(t, tt.expectedStatus, w.Code)
-
-			if tt.expectedStatus == http.StatusOK {
-				assert.Equal(t, "application/zip", w.Header().Get("Content-Type"))
-				assert.Contains(t, w.Header().Get("Content-Disposition"), "attachment")
-				assert.Contains(t, w.Header().Get("Content-Disposition"), profile.Name+".zip")
-				assert.NotEmpty(t, w.Body.Bytes())
-			} else if tt.expectedError != "" {
-				var errorResp ErrorResponse
-				err := json.Unmarshal(w.Body.Bytes(), &errorResp)
-				require.NoError(t, err)
-				assert.Contains(t, errorResp.Error, tt.expectedError)
-			}
-		})
-	}
-}
+// Export route removed with profile store elimination
 
 // Helper function to create string pointers
 func stringPtr(s string) *string {

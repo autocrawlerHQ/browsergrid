@@ -58,10 +58,6 @@ func New(database *db.DB, reconciler *poolmgr.Reconciler, taskClient *asynq.Clie
 
 		// Initialize profiles
 		profileStore := profiles.NewStore(database.DB)
-		localProfileStore, err := profiles.NewLocalProfileStore("")
-		if err != nil {
-			panic("failed to initialize profile store: " + err.Error())
-		}
 
 		// Create profile service adapter
 		profileService := &profileServiceAdapter{
@@ -69,18 +65,16 @@ func New(database *db.DB, reconciler *poolmgr.Reconciler, taskClient *asynq.Clie
 		}
 
 		sessionDeps := sessions.Dependencies{
-			DB:           database.DB,
-			PoolSvc:      poolAdapter,
-			TaskClient:   taskClient,
-			ProfileSvc:   profileService,
-			ProfileStore: profileStore,
+			DB:         database.DB,
+			PoolSvc:    poolAdapter,
+			TaskClient: taskClient,
+			ProfileSvc: profileService,
 		}
 		sessions.RegisterRoutes(v1, sessionDeps)
 
 		profileDeps := profiles.Dependencies{
-			DB:           database.DB,
-			Store:        profileStore,
-			ProfileStore: localProfileStore,
+			DB:    database.DB,
+			Store: profileStore,
 		}
 		profiles.RegisterRoutes(v1, profileDeps)
 

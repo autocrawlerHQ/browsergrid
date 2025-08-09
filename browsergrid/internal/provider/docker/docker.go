@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -21,7 +20,6 @@ import (
 	"github.com/docker/go-connections/nat"
 	"github.com/google/uuid"
 
-	"github.com/autocrawlerHQ/browsergrid/internal/profiles"
 	"github.com/autocrawlerHQ/browsergrid/internal/provider"
 	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
 	"github.com/autocrawlerHQ/browsergrid/internal/workpool"
@@ -32,7 +30,6 @@ type DockerProvisioner struct {
 
 	defaultPort   int
 	healthTimeout time.Duration
-	profileStore  *profiles.LocalProfileStore
 }
 
 func NewDockerProvisioner() *DockerProvisioner {
@@ -41,16 +38,10 @@ func NewDockerProvisioner() *DockerProvisioner {
 		panic(fmt.Errorf("docker client: %w", err))
 	}
 
-	profileStore, err := profiles.NewLocalProfileStore("")
-	if err != nil {
-		panic(fmt.Errorf("profile store: %w", err))
-	}
-
 	return &DockerProvisioner{
 		cli:           cli,
 		defaultPort:   80,
 		healthTimeout: 10 * time.Second,
-		profileStore:  profileStore,
 	}
 }
 
@@ -118,77 +109,15 @@ func (p *DockerProvisioner) Start(
 	// Mount profile if specified
 	if sess.ProfileID != nil {
 		log.Printf("[DOCKER] Session %s requires profile %s", shortID, sess.ProfileID)
-
-		profilePath, err := p.profileStore.GetProfilePath(ctx, sess.ProfileID.String())
-		if err != nil {
-			log.Printf("[DOCKER] Failed to get profile path for %s: %v", sess.ProfileID, err)
-			return "", "", fmt.Errorf("failed to get profile path: %w", err)
-		}
-
-		// Check if profile path exists and is accessible
-		if _, err := os.Stat(profilePath); os.IsNotExist(err) {
-			log.Printf("[DOCKER] Profile path does not exist: %s", profilePath)
-			return "", "", fmt.Errorf("profile path does not exist: %s", profilePath)
-		} else if err != nil {
-			log.Printf("[DOCKER] Cannot access profile path %s: %v", profilePath, err)
-			return "", "", fmt.Errorf("cannot access profile path: %w", err)
-		}
-
-		// Smart profile mounting: use host path when worker is containerized
-		if runningInDocker() {
-			// Try to get the host path of the profile volume
-			volumeName := getenvOr("BROWSERGRID_PROFILE_VOLUME_NAME", "browsergrid-server_profile_data")
-			vol, err := p.cli.VolumeInspect(ctx, volumeName)
-			if err == nil && vol.Mountpoint != "" {
-				// Build the actual host path to the specific profile
-				hostPath := filepath.Join(vol.Mountpoint, sess.ProfileID.String(), "user-data")
-
-				// Ensure the profile directory exists on the host
-				if _, err := os.Stat(hostPath); os.IsNotExist(err) {
-					log.Printf("[DOCKER] Profile directory missing on host, creating: %s", hostPath)
-					if err := os.MkdirAll(hostPath, 0755); err != nil {
-						log.Printf("[DOCKER] Failed to create profile directory: %v", err)
-					} else {
-						// Fix ownership for browser containers
-						if err := os.Chown(hostPath, 1000, 1000); err != nil {
-							log.Printf("[DOCKER] Warning: Could not fix ownership of %s: %v", hostPath, err)
-						}
-					}
-				}
-
-				// Mount only the specific profile directory
-				hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{
-					Type:   mount.TypeBind,
-					Source: hostPath,
-					Target: "/home/user/data-dir",
-				})
-
-				log.Printf("[DOCKER] Bind-mounted specific profile %s from host path %s", sess.ProfileID, hostPath)
-			} else {
-				// Fallback: mount entire profiles volume with environment variable
-				log.Printf("[DOCKER] Cannot inspect volume %s (%v), falling back to full volume mount", volumeName, err)
-
-				hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{
-					Type:   mount.TypeVolume,
-					Source: volumeName,
-					Target: "/var/lib/browsergrid/profiles",
-				})
-
-				// Set environment variable to indicate which profile to use
-				containerConfig.Env = append(containerConfig.Env, fmt.Sprintf("BROWSERGRID_PROFILE_ID=%s", sess.ProfileID.String()))
-
-				log.Printf("[DOCKER] Fallback: mounted full profiles volume for profile %s", sess.ProfileID)
-			}
-		} else {
-			// Non-containerized worker: use direct bind mount
-			hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{
-				Type:   mount.TypeBind,
-				Source: profilePath,
-				Target: "/home/user/data-dir",
-			})
-
-			log.Printf("[DOCKER] Direct bind-mounted profile %s from %s", sess.ProfileID, profilePath)
-		}
+		// Always mount the profiles volume and pass the profile ID to the container.
+		volumeName := getenvOr("BROWSERGRID_PROFILE_VOLUME_NAME", "browsergrid-server_profile_data")
+		hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{
+			Type:   mount.TypeVolume,
+			Source: volumeName,
+			Target: "/var/lib/browsergrid/profiles",
+		})
+		containerConfig.Env = append(containerConfig.Env, fmt.Sprintf("BROWSERGRID_PROFILE_ID=%s", sess.ProfileID.String()))
+		log.Printf("[DOCKER] Mounted profiles volume and set BROWSERGRID_PROFILE_ID for %s", sess.ProfileID)
 	} else {
 		log.Printf("[DOCKER] Session %s has no profile, using default browser data directory", shortID)
 	}

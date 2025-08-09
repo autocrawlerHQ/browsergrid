@@ -1,8 +1,6 @@
 package profiles
 
 import (
-	"context"
-	"io"
 	"time"
 
 	"github.com/google/uuid"
@@ -63,32 +61,6 @@ func (p *Profile) BeforeCreate(tx *gorm.DB) error {
 func (p *Profile) BeforeUpdate(tx *gorm.DB) error {
 	p.UpdatedAt = time.Now()
 	return nil
-}
-
-type ProfileStore interface {
-	// InitializeProfile creates an empty profile directory
-	InitializeProfile(ctx context.Context, profileID string) error
-
-	// ImportProfile imports profile data from a ZIP archive
-	ImportProfile(ctx context.Context, profileID string, zipData io.Reader) error
-
-	// GetProfilePath returns the filesystem path for mounting
-	GetProfilePath(ctx context.Context, profileID string) (string, error)
-
-	// SaveProfileData persists session data to profile
-	SaveProfileData(ctx context.Context, profileID string, sourcePath string) error
-
-	// ExportProfile exports profile data as a ZIP archive
-	ExportProfile(ctx context.Context, profileID string) (io.ReadCloser, error)
-
-	// DeleteProfile removes profile data
-	DeleteProfile(ctx context.Context, profileID string) error
-
-	// GetProfileSize returns the size of profile data in bytes
-	GetProfileSize(ctx context.Context, profileID string) (int64, error)
-
-	// ValidateProfile checks if profile data is valid
-	ValidateProfile(ctx context.Context, profileID string) error
 }
 
 // CreateProfileRequest represents a request to create a new profile

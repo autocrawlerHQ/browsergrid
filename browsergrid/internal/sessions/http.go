@@ -22,18 +22,11 @@ type ProfileService interface {
 	ValidateProfile(ctx context.Context, profileID uuid.UUID, browser Browser) error
 }
 
-// ProfileStore defines the interface for profile storage validation
-type ProfileStore interface {
-	// ValidateProfileForBrowser validates that a profile exists and is compatible with the browser type
-	ValidateProfileForBrowser(ctx context.Context, profileID uuid.UUID, browser Browser) error
-}
-
 type Dependencies struct {
-	DB           *gorm.DB
-	PoolSvc      PoolService
-	TaskClient   *asynq.Client
-	ProfileSvc   ProfileService
-	ProfileStore ProfileStore
+	DB         *gorm.DB
+	PoolSvc    PoolService
+	TaskClient *asynq.Client
+	ProfileSvc ProfileService
 }
 
 func RegisterRoutes(rg *gin.RouterGroup, deps Dependencies) {
@@ -125,12 +118,7 @@ func createSession(store *Store, deps Dependencies) gin.HandlerFunc {
 
 		// Validate profile if provided
 		if req.ProfileID != nil {
-			if deps.ProfileStore != nil {
-				if err := deps.ProfileStore.ValidateProfileForBrowser(c.Request.Context(), *req.ProfileID, req.Browser); err != nil {
-					c.JSON(http.StatusBadRequest, gin.H{"error": "invalid profile: " + err.Error()})
-					return
-				}
-			} else if deps.ProfileSvc != nil {
+			if deps.ProfileSvc != nil {
 				if err := deps.ProfileSvc.ValidateProfile(c.Request.Context(), *req.ProfileID, req.Browser); err != nil {
 					c.JSON(http.StatusBadRequest, gin.H{"error": "invalid profile: " + err.Error()})
 					return
