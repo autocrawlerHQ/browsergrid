@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, RefreshCw, Globe, ExternalLink, MoreVertical, Search, Filter, Eye } from 'lucide-react';
+import { Plus, RefreshCw, Globe, ExternalLink, MoreVertical, Search, Filter, Eye, User } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { StatusBadge } from '@/components/dashboard/StatusBadge';
 import { SessionForm } from '@/components/SessionForm';
 import { useGetApiV1Sessions, usePostApiV1Sessions } from '@/lib/api/sessions/sessions';
+import { useGetApiV1Profiles } from '@/lib/api/profiles/profiles';
 import { processVncUrl } from '@/lib/utils';
 import type { Session, Browser, BrowserVersion, OperatingSystem, SessionStatus } from '@/lib/api/model';
 import { toast } from 'sonner';
@@ -17,6 +18,7 @@ import { useNavigate } from 'react-router-dom';
 
 export default function Sessions() {
   const { data: sessionsData, isLoading, refetch } = useGetApiV1Sessions();
+  const { data: profilesData } = useGetApiV1Profiles();
   const createSession = usePostApiV1Sessions();
   const navigate = useNavigate();
   
@@ -222,6 +224,7 @@ export default function Sessions() {
           ) : (
             <SessionsTable 
               sessions={filteredSessions}
+              profiles={profilesData?.profiles || []}
               onViewDetails={handleViewDetails}
             />
           )}
@@ -265,9 +268,11 @@ function SessionCreateDialog({
 // Sessions Table Component
 function SessionsTable({ 
   sessions, 
+  profiles,
   onViewDetails 
 }: { 
   sessions: Session[];
+  profiles: any[];
   onViewDetails: (session: Session) => void;
 }) {
   return (
@@ -276,6 +281,7 @@ function SessionsTable({
         <TableRow className="border-neutral-100">
           <TableHead className="font-medium text-neutral-700 text-xs h-10">Session</TableHead>
           <TableHead className="font-medium text-neutral-700 text-xs h-10">Browser</TableHead>
+          <TableHead className="font-medium text-neutral-700 text-xs h-10">Profile</TableHead>
           <TableHead className="font-medium text-neutral-700 text-xs h-10">Status</TableHead>
           <TableHead className="font-medium text-neutral-700 text-xs h-10">Created</TableHead>
           <TableHead className="font-medium text-neutral-700 text-xs h-10">Pool</TableHead>
@@ -303,6 +309,18 @@ function SessionsTable({
                   {session.version}
                 </Badge>
               </div>
+            </TableCell>
+            <TableCell className="py-3">
+              {session.profile_id ? (
+                <div className="flex items-center gap-2">
+                  <User className="h-3 w-3 text-neutral-400" />
+                  <span className="font-medium text-neutral-900 text-xs">
+                    {profiles.find(p => p.id === session.profile_id)?.name || 'Unknown Profile'}
+                  </span>
+                </div>
+              ) : (
+                <span className="text-neutral-400 text-xs">-</span>
+              )}
             </TableCell>
             <TableCell className="py-3">
               <StatusBadge status={session.status || 'unknown'} />

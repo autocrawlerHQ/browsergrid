@@ -24,9 +24,9 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/api/v1/sessions": {
+        "/api/v1/deployments": {
             "get": {
-                "description": "Get a list of browser sessions with optional filtering by status and time range",
+                "description": "Get a list of all deployments with optional filtering",
                 "consumes": [
                     "application/json"
                 ],
@@ -34,86 +34,54 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "sessions"
+                    "deployments"
                 ],
-                "summary": "List browser sessions",
+                "summary": "List deployments",
                 "parameters": [
                     {
-                        "enum": [
-                            "pending",
-                            "starting",
-                            "available",
-                            "claimed",
-                            "running",
-                            "idle",
-                            "completed",
-                            "failed",
-                            "expired",
-                            "crashed",
-                            "timed_out",
-                            "terminated",
-                            "pending",
-                            "starting",
-                            "available",
-                            "claimed",
-                            "running",
-                            "idle",
-                            "completed",
-                            "failed",
-                            "expired",
-                            "crashed",
-                            "timed_out",
-                            "terminated"
-                        ],
                         "type": "string",
-                        "description": "Filter by session status",
+                        "description": "Filter by deployment status",
                         "name": "status",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Filter sessions created after this time (RFC3339)",
-                        "name": "start_time",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Filter sessions created before this time (RFC3339)",
-                        "name": "end_time",
+                        "description": "Filter by runtime",
+                        "name": "runtime",
                         "in": "query"
                     },
                     {
                         "type": "integer",
                         "default": 0,
-                        "description": "Pagination offset",
+                        "description": "Number of deployments to skip",
                         "name": "offset",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "default": 100,
-                        "description": "Pagination limit",
+                        "default": 20,
+                        "description": "Maximum number of deployments to return",
                         "name": "limit",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "List of sessions with pagination info",
+                        "description": "List of deployments",
                         "schema": {
-                            "$ref": "#/definitions/SessionListResponse"
+                            "$ref": "#/definitions/internal_deployments.DeploymentListResponse"
                         }
                     },
                     "500": {
-                        "description": "Internal Server Error",
+                        "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
                         }
                     }
                 }
             },
             "post": {
-                "description": "Create a new browser session with specified configuration",
+                "description": "Create a new deployment package with specified configuration",
                 "consumes": [
                     "application/json"
                 ],
@@ -121,45 +89,45 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "sessions"
+                    "deployments"
                 ],
-                "summary": "Create a new browser session",
+                "summary": "Create a new deployment",
                 "parameters": [
                     {
-                        "description": "Session configuration",
-                        "name": "session",
+                        "description": "Deployment configuration",
+                        "name": "deployment",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/Session"
+                            "$ref": "#/definitions/internal_deployments.CreateDeploymentRequest"
                         }
                     }
                 ],
                 "responses": {
                     "201": {
-                        "description": "Created",
+                        "description": "Deployment created successfully",
                         "schema": {
-                            "$ref": "#/definitions/Session"
+                            "$ref": "#/definitions/internal_deployments.Deployment"
                         }
                     },
                     "400": {
-                        "description": "Bad Request",
+                        "description": "Invalid request data",
                         "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
                         }
                     },
                     "500": {
-                        "description": "Internal Server Error",
+                        "description": "Internal server error",
                         "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
                         }
                     }
                 }
             }
         },
-        "/api/v1/sessions/{id}": {
+        "/api/v1/deployments/{id}": {
             "get": {
-                "description": "Get details of a specific browser session by ID",
+                "description": "Get detailed information about a specific deployment",
                 "consumes": [
                     "application/json"
                 ],
@@ -167,13 +135,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "sessions"
+                    "deployments"
                 ],
-                "summary": "Get a browser session",
+                "summary": "Get a deployment",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Session ID (UUID)",
+                        "description": "Deployment ID (UUID)",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -181,29 +149,288 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "Deployment details",
                         "schema": {
-                            "$ref": "#/definitions/Session"
+                            "$ref": "#/definitions/internal_deployments.Deployment"
                         }
                     },
                     "400": {
-                        "description": "Bad Request",
+                        "description": "Invalid deployment ID",
                         "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
                         }
                     },
                     "404": {
-                        "description": "Not Found",
+                        "description": "Deployment not found",
                         "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a deployment and all its runs",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "Delete a deployment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Deployment ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deployment deleted successfully",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid deployment ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Deployment not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "Update deployment metadata and configuration",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "Update a deployment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Deployment ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Deployment updates",
+                        "name": "deployment",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.UpdateDeploymentRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deployment updated successfully",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.Deployment"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request data",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Deployment not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
                         }
                     }
                 }
             }
         },
-        "/api/v1/sessions/{id}/events": {
+        "/api/v1/deployments/{id}/runs": {
             "get": {
-                "description": "Get a list of session events with optional filtering by event type and time range",
+                "description": "Get a list of runs for a specific deployment",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "List deployment runs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Deployment ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by run status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Number of runs to skip",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Maximum number of runs to return",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of deployment runs",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.DeploymentRunListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid deployment ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Trigger a manual run of a deployment",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "Create a new deployment run",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Deployment ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Deployment run configuration",
+                        "name": "run",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.CreateDeploymentRunRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Deployment run created successfully",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.DeploymentRun"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request data",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Deployment not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/deployments/{id}/stats": {
+            "get": {
+                "description": "Get detailed statistics for a deployment",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "Get deployment statistics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Deployment ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deployment statistics",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid deployment ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Deployment not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/events": {
+            "get": {
+                "description": "Get a list of events for browser sessions with optional filtering by session ID, event type, time range, and pagination",
                 "consumes": [
                     "application/json"
                 ],
@@ -217,10 +444,9 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Session ID (UUID)",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
+                        "description": "Session ID (UUID) - alternative to path parameter",
+                        "name": "session_id",
+                        "in": "query"
                     },
                     {
                         "enum": [
@@ -259,46 +485,49 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Filter events created after this time (RFC3339)",
+                        "description": "Filter events after this time (RFC3339 format)",
                         "name": "start_time",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Filter events created before this time (RFC3339)",
+                        "description": "Filter events before this time (RFC3339 format)",
                         "name": "end_time",
                         "in": "query"
                     },
                     {
+                        "minimum": 0,
                         "type": "integer",
                         "default": 0,
-                        "description": "Pagination offset",
+                        "description": "Number of events to skip",
                         "name": "offset",
                         "in": "query"
                     },
                     {
+                        "maximum": 1000,
+                        "minimum": 1,
                         "type": "integer",
                         "default": 100,
-                        "description": "Pagination limit",
+                        "description": "Maximum number of events to return",
                         "name": "limit",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "List of events with pagination info",
+                        "description": "List of events",
                         "schema": {
                             "$ref": "#/definitions/SessionEventListResponse"
                         }
                     },
                     "400": {
-                        "description": "Bad Request",
+                        "description": "Invalid session ID or parameters",
                         "schema": {
                             "$ref": "#/definitions/ErrorResponse"
                         }
                     },
                     "500": {
-                        "description": "Internal Server Error",
+                        "description": "Internal server error",
                         "schema": {
                             "$ref": "#/definitions/ErrorResponse"
                         }
@@ -306,7 +535,986 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "Create a new event for a session (e.g., page navigation, user interaction)",
+                "description": "Create a new event for a browser session. The session ID can be provided in the URL path or in the request body.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "Create a session event",
+                "parameters": [
+                    {
+                        "description": "Event data",
+                        "name": "event",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/SessionEvent"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Event created successfully",
+                        "schema": {
+                            "$ref": "#/definitions/SessionEvent"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request data or missing session_id/event",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/metrics": {
+            "post": {
+                "description": "Create performance metrics for a browser session. The session ID can be provided in the URL path or in the request body.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "metrics"
+                ],
+                "summary": "Create session metrics",
+                "parameters": [
+                    {
+                        "description": "Performance metrics data",
+                        "name": "metrics",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/SessionMetrics"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Metrics created successfully",
+                        "schema": {
+                            "$ref": "#/definitions/SessionMetrics"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request data or missing session_id",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/profiles": {
+            "get": {
+                "description": "Get a paginated list of browser profiles",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "profiles"
+                ],
+                "summary": "List profiles",
+                "parameters": [
+                    {
+                        "enum": [
+                            "chrome",
+                            "chromium",
+                            "firefox",
+                            "edge",
+                            "webkit",
+                            "safari"
+                        ],
+                        "type": "string",
+                        "description": "Filter by browser type",
+                        "name": "browser",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Number of profiles to skip",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 100,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Maximum number of profiles to return",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of profiles",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ProfileListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new browser profile for saving and reusing browser state",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "profiles"
+                ],
+                "summary": "Create a new profile",
+                "parameters": [
+                    {
+                        "description": "Profile configuration",
+                        "name": "profile",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.CreateProfileRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Profile created successfully",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.Profile"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request data",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/profiles/import": {
+            "post": {
+                "description": "Import a browser profile from a ZIP archive",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "profiles"
+                ],
+                "summary": "Import a profile",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "Profile ZIP archive",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Profile name",
+                        "name": "name",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Profile description",
+                        "name": "description",
+                        "in": "formData"
+                    },
+                    {
+                        "enum": [
+                            "chrome",
+                            "chromium",
+                            "firefox",
+                            "edge",
+                            "webkit",
+                            "safari"
+                        ],
+                        "type": "string",
+                        "description": "Browser type",
+                        "name": "browser",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Profile imported successfully",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.Profile"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request or file",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/profiles/{id}": {
+            "get": {
+                "description": "Get detailed information about a specific profile",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "profiles"
+                ],
+                "summary": "Get a profile",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Profile ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Profile details",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.Profile"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid profile ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Profile not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a profile and its associated data. Cannot delete profiles with active sessions.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "profiles"
+                ],
+                "summary": "Delete a profile",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Profile ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Profile deleted successfully",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid profile ID or profile has active sessions",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Profile not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "Update profile metadata (name, description)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "profiles"
+                ],
+                "summary": "Update a profile",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Profile ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to update",
+                        "name": "updates",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.UpdateProfileRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated profile",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.Profile"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Profile not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/profiles/{id}/export": {
+            "get": {
+                "description": "Export a browser profile as a ZIP archive",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/zip"
+                ],
+                "tags": [
+                    "profiles"
+                ],
+                "summary": "Export a profile",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Profile ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Profile ZIP archive",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid profile ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Profile not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_profiles.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/runs": {
+            "get": {
+                "description": "Get a list of all deployment runs across all deployments",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "List all deployment runs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by run status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Number of runs to skip",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Maximum number of runs to return",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of deployment runs",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.DeploymentRunListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/runs/{id}": {
+            "get": {
+                "description": "Get detailed information about a specific deployment run",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "Get a deployment run",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Run ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deployment run details",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.DeploymentRun"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid run ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Run not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a deployment run",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "Delete a deployment run",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Run ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Run deleted successfully",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid run ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Run not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/runs/{id}/logs": {
+            "get": {
+                "description": "Get logs for a specific deployment run",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deployments"
+                ],
+                "summary": "Get deployment run logs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Run ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deployment run logs",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid run ID",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Run not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_deployments.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/sessions": {
+            "get": {
+                "description": "Get a list of browser sessions with optional filtering by status, time range, and pagination",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sessions"
+                ],
+                "summary": "List browser sessions",
+                "parameters": [
+                    {
+                        "enum": [
+                            "pending",
+                            "starting",
+                            "available",
+                            "claimed",
+                            "running",
+                            "idle",
+                            "completed",
+                            "failed",
+                            "expired",
+                            "crashed",
+                            "timed_out",
+                            "terminated"
+                        ],
+                        "type": "string",
+                        "description": "Filter by session status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter sessions created after this time (RFC3339 format)",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter sessions created before this time (RFC3339 format)",
+                        "name": "end_time",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Number of sessions to skip",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 1000,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Maximum number of sessions to return",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of sessions",
+                        "schema": {
+                            "$ref": "#/definitions/SessionListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new browser session with specified configuration. The session will be created in pending status and a start task will be enqueued.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sessions"
+                ],
+                "summary": "Create a new browser session",
+                "parameters": [
+                    {
+                        "description": "Session configuration",
+                        "name": "session",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/Session"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Session created successfully",
+                        "schema": {
+                            "$ref": "#/definitions/Session"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request data",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/sessions/{id}": {
+            "get": {
+                "description": "Get detailed information about a specific browser session by its ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sessions"
+                ],
+                "summary": "Get a browser session",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Session ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Session details",
+                        "schema": {
+                            "$ref": "#/definitions/Session"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid session ID",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Session not found",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Stop and terminate a running browser session. If the session is already in a terminal state, it will return success immediately.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sessions"
+                ],
+                "summary": "Delete a browser session",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Session ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Session termination initiated or already terminated",
+                        "schema": {
+                            "$ref": "#/definitions/MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid session ID",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Session not found",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/sessions/{id}/events": {
+            "get": {
+                "description": "Get a list of events for browser sessions with optional filtering by session ID, event type, time range, and pagination",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "events"
+                ],
+                "summary": "List session events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Session ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Session ID (UUID) - alternative to path parameter",
+                        "name": "session_id",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "session_created",
+                            "resource_allocated",
+                            "session_starting",
+                            "container_started",
+                            "browser_started",
+                            "session_available",
+                            "session_claimed",
+                            "session_assigned",
+                            "session_ready",
+                            "session_active",
+                            "session_idle",
+                            "heartbeat",
+                            "pool_added",
+                            "pool_removed",
+                            "pool_drained",
+                            "session_completed",
+                            "session_expired",
+                            "session_timed_out",
+                            "session_terminated",
+                            "startup_failed",
+                            "browser_crashed",
+                            "container_crashed",
+                            "resource_exhausted",
+                            "network_error",
+                            "status_changed",
+                            "config_updated",
+                            "health_check"
+                        ],
+                        "type": "string",
+                        "description": "Filter by event type",
+                        "name": "event_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter events after this time (RFC3339 format)",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter events before this time (RFC3339 format)",
+                        "name": "end_time",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Number of events to skip",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "maximum": 1000,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Maximum number of events to return",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of events",
+                        "schema": {
+                            "$ref": "#/definitions/SessionEventListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid session ID or parameters",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new event for a browser session. The session ID can be provided in the URL path or in the request body.",
                 "consumes": [
                     "application/json"
                 ],
@@ -326,7 +1534,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Session event data",
+                        "description": "Event data",
                         "name": "event",
                         "in": "body",
                         "required": true,
@@ -337,19 +1545,19 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "201": {
-                        "description": "Created",
+                        "description": "Event created successfully",
                         "schema": {
                             "$ref": "#/definitions/SessionEvent"
                         }
                     },
                     "400": {
-                        "description": "Bad Request",
+                        "description": "Invalid request data or missing session_id/event",
                         "schema": {
                             "$ref": "#/definitions/ErrorResponse"
                         }
                     },
                     "500": {
-                        "description": "Internal Server Error",
+                        "description": "Internal server error",
                         "schema": {
                             "$ref": "#/definitions/ErrorResponse"
                         }
@@ -359,7 +1567,7 @@ const docTemplate = `{
         },
         "/api/v1/sessions/{id}/metrics": {
             "post": {
-                "description": "Create performance metrics for a session (CPU, memory, network usage)",
+                "description": "Create performance metrics for a browser session. The session ID can be provided in the URL path or in the request body.",
                 "consumes": [
                     "application/json"
                 ],
@@ -379,7 +1587,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Session metrics data",
+                        "description": "Performance metrics data",
                         "name": "metrics",
                         "in": "body",
                         "required": true,
@@ -390,260 +1598,19 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "201": {
-                        "description": "Created",
+                        "description": "Metrics created successfully",
                         "schema": {
                             "$ref": "#/definitions/SessionMetrics"
                         }
                     },
                     "400": {
-                        "description": "Bad Request",
+                        "description": "Invalid request data or missing session_id",
                         "schema": {
                             "$ref": "#/definitions/ErrorResponse"
                         }
                     },
                     "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/v1/workers": {
-            "get": {
-                "description": "Get a list of all workers with optional filtering",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "workers"
-                ],
-                "summary": "List workers",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Filter by work pool ID (UUID)",
-                        "name": "pool_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "boolean",
-                        "description": "Filter by online status",
-                        "name": "online",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "List of workers",
-                        "schema": {
-                            "$ref": "#/definitions/WorkerListResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/v1/workers/{id}": {
-            "get": {
-                "description": "Get details of a specific worker by ID",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "workers"
-                ],
-                "summary": "Get a worker",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Worker ID (UUID)",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/Worker"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "description": "Delete a worker from the pool",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "workers"
-                ],
-                "summary": "Delete a worker",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Worker ID (UUID)",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/MessageResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/v1/workers/{id}/heartbeat": {
-            "post": {
-                "description": "Update worker status with current active session count",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "workers"
-                ],
-                "summary": "Send worker heartbeat",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Worker ID (UUID)",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Heartbeat data",
-                        "name": "heartbeat",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/WorkerHeartbeatRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/MessageResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/v1/workers/{id}/pause": {
-            "post": {
-                "description": "Pause or resume a worker to control its availability",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "workers"
-                ],
-                "summary": "Pause or resume a worker",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Worker ID (UUID)",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Pause configuration",
-                        "name": "pause",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/WorkerPauseRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/MessageResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
+                        "description": "Internal server error",
                         "schema": {
                             "$ref": "#/definitions/ErrorResponse"
                         }
@@ -1062,6 +2029,24 @@ const docTemplate = `{
                 "VerDev"
             ]
         },
+        "DeploymentStatus": {
+            "description": "Current status of a deployment",
+            "type": "string",
+            "enum": [
+                "active",
+                "inactive",
+                "deploying",
+                "failed",
+                "deprecated"
+            ],
+            "x-enum-varnames": [
+                "StatusActive",
+                "StatusInactive",
+                "StatusDeploying",
+                "StatusFailed",
+                "StatusDeprecated"
+            ]
+        },
         "ErrorResponse": {
             "description": "Error response with details",
             "type": "object",
@@ -1145,6 +2130,36 @@ const docTemplate = `{
                     "example": 30
                 }
             }
+        },
+        "RunStatus": {
+            "description": "Current status of a deployment run",
+            "type": "string",
+            "enum": [
+                "pending",
+                "running",
+                "completed",
+                "failed",
+                "cancelled"
+            ],
+            "x-enum-varnames": [
+                "RunStatusPending",
+                "RunStatusRunning",
+                "RunStatusCompleted",
+                "RunStatusFailed",
+                "RunStatusCancelled"
+            ]
+        },
+        "Runtime": {
+            "description": "Supported deployment runtimes",
+            "type": "string",
+            "enum": [
+                "node",
+                "python"
+            ],
+            "x-enum-varnames": [
+                "RuntimeNode",
+                "RuntimePython"
+            ]
         },
         "ScalingRequest": {
             "description": "Scaling parameters for updating work pool configuration",
@@ -1273,7 +2288,7 @@ const docTemplate = `{
                 },
                 "live_url": {
                     "type": "string",
-                    "example": "http://localhost:7900"
+                    "example": "http://localhost:80"
                 },
                 "operating_system": {
                     "allOf": [
@@ -1286,6 +2301,10 @@ const docTemplate = `{
                 "pool_id": {
                     "type": "string",
                     "example": "chrome-pool"
+                },
+                "profile_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440001"
                 },
                 "provider": {
                     "type": "string",
@@ -1328,13 +2347,9 @@ const docTemplate = `{
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440002"
                 },
-                "worker_id": {
-                    "type": "string",
-                    "example": "550e8400-e29b-41d4-a716-446655440001"
-                },
                 "ws_endpoint": {
                     "type": "string",
-                    "example": "ws://localhost:9222/devtools/browser"
+                    "example": "ws://localhost:80/devtools/browser"
                 }
             }
         },
@@ -1632,97 +2647,454 @@ const docTemplate = `{
                 }
             }
         },
-        "Worker": {
-            "description": "Worker instance that handles browser sessions",
+        "internal_deployments.BrowserRequest": {
+            "description": "Browser session configuration for deployment",
             "type": "object",
             "properties": {
-                "active": {
-                    "type": "integer",
-                    "example": 0
+                "browser": {
+                    "type": "string"
                 },
-                "hostname": {
-                    "type": "string",
-                    "example": "browsergrid-worker-1"
+                "environment": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 },
-                "id": {
-                    "type": "string",
-                    "example": "550e8400-e29b-41d4-a716-446655440001"
+                "headless": {
+                    "type": "boolean"
                 },
-                "last_beat": {
-                    "type": "string",
-                    "example": "2023-01-01T00:00:00Z"
+                "operating_system": {
+                    "type": "string"
                 },
-                "max_slots": {
-                    "type": "integer",
-                    "example": 1
+                "profile_id": {
+                    "type": "string"
+                },
+                "screen": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_deployments.CreateDeploymentRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "package_hash",
+                "package_url",
+                "runtime",
+                "version"
+            ],
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/internal_deployments.DeploymentConfig"
+                },
+                "description": {
+                    "type": "string"
                 },
                 "name": {
-                    "type": "string",
-                    "example": "worker-chrome-001"
+                    "type": "string"
                 },
-                "paused": {
-                    "type": "boolean",
-                    "example": false
+                "package_hash": {
+                    "type": "string"
                 },
-                "pool_id": {
-                    "type": "string",
-                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                "package_url": {
+                    "type": "string"
                 },
-                "provider": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/ProviderType"
-                        }
-                    ],
-                    "example": "docker"
+                "runtime": {
+                    "$ref": "#/definitions/Runtime"
                 },
-                "started_at": {
-                    "type": "string",
-                    "example": "2023-01-01T00:00:00Z"
+                "version": {
+                    "type": "string"
                 }
             }
         },
-        "WorkerHeartbeatRequest": {
-            "description": "Heartbeat data with active session count",
+        "internal_deployments.CreateDeploymentRunRequest": {
             "type": "object",
             "properties": {
-                "active": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "example": 2
-                }
-            }
-        },
-        "WorkerListResponse": {
-            "description": "Response containing a list of workers",
-            "type": "object",
-            "properties": {
-                "total": {
-                    "type": "integer",
-                    "example": 10
+                "config": {
+                    "type": "object",
+                    "additionalProperties": true
                 },
-                "workers": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/Worker"
+                "environment": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
                     }
                 }
             }
         },
-        "WorkerPauseRequest": {
-            "description": "Pause configuration for a worker",
+        "internal_deployments.Deployment": {
+            "description": "Deployment package with configuration and metadata",
             "type": "object",
             "properties": {
-                "paused": {
-                    "type": "boolean",
-                    "example": true
+                "config": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "failed_runs": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "package_hash": {
+                    "type": "string"
+                },
+                "package_url": {
+                    "type": "string"
+                },
+                "runs": {
+                    "description": "Relationships",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_deployments.DeploymentRun"
+                    }
+                },
+                "runtime": {
+                    "$ref": "#/definitions/Runtime"
+                },
+                "status": {
+                    "$ref": "#/definitions/DeploymentStatus"
+                },
+                "successful_runs": {
+                    "type": "integer"
+                },
+                "total_runs": {
+                    "description": "Computed fields",
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_deployments.DeploymentConfig": {
+            "description": "Deployment configuration settings",
+            "type": "object",
+            "properties": {
+                "browser_requests": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_deployments.BrowserRequest"
+                    }
+                },
+                "concurrency": {
+                    "type": "integer"
+                },
+                "environment": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "max_retries": {
+                    "type": "integer"
+                },
+                "resource_limits": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "schedule": {
+                    "type": "string"
+                },
+                "timeout_seconds": {
+                    "type": "integer"
+                },
+                "trigger_events": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_deployments.DeploymentListResponse": {
+            "type": "object",
+            "properties": {
+                "deployments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_deployments.Deployment"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_deployments.DeploymentRun": {
+            "description": "Deployment run with execution details and results",
+            "type": "object",
+            "properties": {
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "deployment": {
+                    "description": "Relationships",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/internal_deployments.Deployment"
+                        }
+                    ]
+                },
+                "deployment_id": {
+                    "type": "string"
+                },
+                "duration_seconds": {
+                    "description": "Computed fields",
+                    "type": "integer"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "output": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "session_id": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/RunStatus"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_deployments.DeploymentRunListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "runs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_deployments.DeploymentRun"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_deployments.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_deployments.MessageResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_deployments.UpdateDeploymentRequest": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/internal_deployments.DeploymentConfig"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/DeploymentStatus"
+                }
+            }
+        },
+        "internal_profiles.CreateProfileRequest": {
+            "type": "object",
+            "required": [
+                "browser",
+                "name"
+            ],
+            "properties": {
+                "browser": {
+                    "enum": [
+                        "chrome",
+                        "chromium",
+                        "firefox",
+                        "edge",
+                        "webkit",
+                        "safari"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/Browser"
+                        }
+                    ]
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 1000
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "minLength": 1
+                }
+            }
+        },
+        "internal_profiles.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_profiles.MessageResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_profiles.Profile": {
+            "type": "object",
+            "properties": {
+                "active_sessions": {
+                    "description": "Computed fields",
+                    "type": "integer"
+                },
+                "browser": {
+                    "$ref": "#/definitions/Browser"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_used_at": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "storage_backend": {
+                    "$ref": "#/definitions/internal_profiles.StorageBackend"
+                },
+                "total_sessions": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_profiles.ProfileListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "profiles": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_profiles.Profile"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_profiles.StorageBackend": {
+            "type": "string",
+            "enum": [
+                "local",
+                "s3"
+            ],
+            "x-enum-varnames": [
+                "StorageBackendLocal",
+                "StorageBackendS3"
+            ]
+        },
+        "internal_profiles.UpdateProfileRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 1000
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "minLength": 1
                 }
             }
         }
     },
     "securityDefinitions": {
-        "BasicAuth": {
-            "type": "basic"
+        "ApiKeyAuth": {
+            "description": "API key for authentication. Can also be provided via query parameter 'api_key' or Authorization header.",
+            "type": "apiKey",
+            "name": "X-API-Key",
+            "in": "header"
         }
     },
     "externalDocs": {
@@ -1733,12 +3105,12 @@ const docTemplate = `{
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "1.0",
-	Host:             "localhost:8080",
-	BasePath:         "/api/v1",
+	Version:          "2.0",
+	Host:             "localhost:8765",
+	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "BrowserGrid API",
-	Description:      "BrowserGrid is a distributed browser automation platform that provides scalable browser sessions and worker pool management.",
+	Description:      "BrowserGrid is a distributed browser automation platform using task queues for scalable browser session management.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

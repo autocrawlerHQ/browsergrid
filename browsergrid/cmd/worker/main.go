@@ -2,323 +2,349 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
-	"sync/atomic"
 	"syscall"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
+	"github.com/autocrawlerHQ/browsergrid/internal/deployments"
+	"github.com/autocrawlerHQ/browsergrid/internal/profiles"
 	"github.com/autocrawlerHQ/browsergrid/internal/provider"
 	_ "github.com/autocrawlerHQ/browsergrid/internal/provider/docker"
 	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
-	"github.com/autocrawlerHQ/browsergrid/internal/workpool"
+	"github.com/autocrawlerHQ/browsergrid/internal/tasks"
 )
 
 type WorkerConfig struct {
-	WorkPoolID   string
-	Name         string
-	Provider     string
-	Concurrency  int
-	DatabaseURL  string
-	PollInterval time.Duration
-	Hostname     string
-}
-
-type WorkerRuntime struct {
-	*workpool.Worker
-	activeCount int32
+	Name        string
+	Provider    string
+	DatabaseURL string
+	RedisAddr   string
+	Concurrency int
+	Queues      map[string]int
 }
 
 func main() {
+	log.Println("========================================")
+	log.Println("       BrowserGrid Worker v2.0         ")
+	log.Println("========================================")
+
 	cfg := loadConfig()
 
 	db, err := connectDB(cfg.DatabaseURL)
 	if err != nil {
-		log.Fatal("Failed to connect to database:", err)
+		log.Fatal("[STARTUP] ✗ Failed to connect to database:", err)
 	}
 
-	ws := workpool.NewStore(db)
-	ss := sessions.NewStore(db)
-
-	if cfg.WorkPoolID == "" {
-		pool, err := ensureDefaultPool(context.Background(), ws, cfg.Provider)
-		if err != nil {
-			log.Fatalf("could not obtain default work-pool: %v", err)
-		}
-		cfg.WorkPoolID = pool.ID.String()
-		log.Printf("Using default work-pool %s (%s)", pool.Name, pool.ID)
-	}
-
-	poolID, err := uuid.Parse(cfg.WorkPoolID)
+	sessStore := sessions.NewStore(db)
+	profileStore := profiles.NewStore(db)
+	resolvedProfileStore, err := profiles.ResolveFromEnv()
 	if err != nil {
-		log.Fatal("Invalid work pool ID:", err)
+		log.Fatal("[STARTUP] ✗ Failed to initialize profile store:", err)
 	}
 
-	pool, err := ws.GetWorkPool(context.Background(), poolID)
-	if err != nil {
-		log.Fatal("Work pool not found:", err)
-	}
-
-	log.Printf("Connecting to work pool: %s (%s)", pool.Name, pool.Provider)
+	// Initialize deployment runner
+	deploymentRunner := deployments.NewDeploymentRunner(db, "/tmp/deployments")
 
 	prov, ok := provider.FromString(cfg.Provider)
 	if !ok {
-		log.Fatalf("Unknown provider type: %s", cfg.Provider)
+		log.Fatalf("[STARTUP] ✗ Unknown provider type: %s", cfg.Provider)
 	}
 
-	worker := &WorkerRuntime{
-		Worker: &workpool.Worker{
-			ID:       uuid.New(),
-			PoolID:   poolID,
-			Name:     cfg.Name,
-			Hostname: cfg.Hostname,
-			Provider: workpool.ProviderType(cfg.Provider),
-			MaxSlots: cfg.Concurrency,
-			Active:   0,
-			Paused:   false,
+	redisOpt := asynq.RedisClientOpt{Addr: cfg.RedisAddr}
+
+	srv := asynq.NewServer(
+		redisOpt,
+		asynq.Config{
+			Concurrency:     cfg.Concurrency,
+			Queues:          cfg.Queues,
+			RetryDelayFunc:  asynq.DefaultRetryDelayFunc,
+			ShutdownTimeout: 30 * time.Second,
 		},
-		activeCount: 0,
-	}
+	)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	mux := asynq.NewServeMux()
+
+	mux.HandleFunc(tasks.TypeSessionStart, handleSessionStart(sessStore, prov))
+	mux.HandleFunc(tasks.TypeSessionStop, handleSessionStop(sessStore, prov, profileStore, resolvedProfileStore))
+	mux.HandleFunc(tasks.TypeSessionHealthCheck, handleSessionHealthCheck(sessStore, prov))
+	mux.HandleFunc(tasks.TypeSessionTimeout, handleSessionTimeout(sessStore, prov, cfg.RedisAddr))
+	mux.HandleFunc(tasks.TypeDeploymentRun, handleDeploymentRun(deploymentRunner))
+	mux.HandleFunc(tasks.TypeDeploymentSchedule, handleDeploymentSchedule(deploymentRunner))
+
+	log.Printf("[WORKER] Starting worker...")
+	log.Printf("[WORKER] └── Name: %s", cfg.Name)
+	log.Printf("[WORKER] └── Provider: %s", cfg.Provider)
+	log.Printf("[WORKER] └── Concurrency: %d", cfg.Concurrency)
+	log.Printf("[WORKER] └── Redis: %s", cfg.RedisAddr)
+	log.Printf("[WORKER] └── Queues: %v", cfg.Queues)
+	log.Printf("[WORKER] Ready to process tasks...")
+	log.Printf("[WORKER] =======================================")
+
+	_, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	if err := ws.RegisterWorker(ctx, worker.Worker); err != nil {
-		log.Fatal("Failed to register worker:", err)
-	}
-
-	log.Printf("Worker registered: %s (ID: %s)", worker.Name, worker.ID)
-	log.Printf("Max concurrency: %d", worker.MaxSlots)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		if err := runWorker(ctx, worker, ws, ss, prov, cfg.PollInterval); err != nil {
-			log.Printf("Worker error: %v", err)
-		}
+		<-sigChan
+		log.Printf("[SHUTDOWN] Received shutdown signal...")
+		cancel()
 	}()
 
-	<-sigChan
-	log.Println("Shutting down worker...")
-
-	ws.PauseWorker(context.Background(), worker.ID, true)
-
-	cancel()
-
-	shutdownTimeout := 30 * time.Second
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
-	defer shutdownCancel()
-
-	for {
-		select {
-		case <-shutdownCtx.Done():
-			log.Println("Shutdown timeout reached, forcing exit")
-			return
-		default:
-			if atomic.LoadInt32(&worker.activeCount) == 0 {
-				log.Println("All sessions completed, exiting")
-				return
-			}
-			time.Sleep(1 * time.Second)
-		}
+	if err := srv.Run(mux); err != nil {
+		log.Fatal("[WORKER] ✗ Failed to run server:", err)
 	}
 }
 
-func runWorker(
-	ctx context.Context,
-	worker *WorkerRuntime,
-	ws *workpool.Store,
-	ss *sessions.Store,
-	prov provider.Provisioner,
-	pollInterval time.Duration,
-) error {
-	log.Printf("Starting worker loop with %v poll interval", pollInterval)
+func handleSessionStart(store *sessions.Store, prov provider.Provisioner) asynq.HandlerFunc {
+	return func(ctx context.Context, t *asynq.Task) error {
+		var payload tasks.SessionStartPayload
+		if err := payload.Unmarshal(t.Payload()); err != nil {
+			return fmt.Errorf("failed to unmarshal payload: %w", err)
+		}
 
-	ticker := time.NewTicker(pollInterval)
-	defer ticker.Stop()
+		log.Printf("[TASK] Starting session %s", payload.SessionID)
 
-	heartbeatTicker := time.NewTicker(30 * time.Second)
-	defer heartbeatTicker.Stop()
+		sess, err := store.GetSession(ctx, payload.SessionID)
+		if err != nil {
+			return fmt.Errorf("failed to get session: %w", err)
+		}
 
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
+		// Log profile information
+		if sess.ProfileID != nil {
+			log.Printf("[TASK] Session %s uses profile %s", sess.ID, *sess.ProfileID)
+		} else {
+			log.Printf("[TASK] Session %s has no profile", sess.ID)
+		}
 
-		case <-ticker.C:
-			currentWorker, err := ws.GetWorker(ctx, worker.ID)
+		if err := store.UpdateSessionStatus(ctx, sess.ID, sessions.StatusStarting); err != nil {
+			log.Printf("[TASK] Warning: Failed to update session status: %v", err)
+		}
+
+		wsURL, liveURL, err := prov.Start(ctx, sess)
+		if err != nil {
+			log.Printf("[TASK] ✗ Failed to start session %s: %v", sess.ID, err)
+			store.UpdateSessionStatus(ctx, sess.ID, sessions.StatusFailed)
+			return fmt.Errorf("failed to start provider: %w", err)
+		}
+
+		if err := store.UpdateSessionEndpoints(ctx, sess.ID, wsURL, liveURL, sessions.StatusRunning); err != nil {
+			return fmt.Errorf("failed to update session endpoints: %w", err)
+		}
+
+		log.Printf("[TASK] ✓ Session %s started successfully", sess.ID)
+		log.Printf("[TASK] └── WebSocket: %s", wsURL)
+		log.Printf("[TASK] └── Live URL: %s", liveURL)
+
+		client := asynq.NewClient(asynq.RedisClientOpt{Addr: payload.RedisAddr})
+		defer client.Close()
+
+		healthCheckPayload := tasks.SessionHealthCheckPayload{
+			SessionID: sess.ID,
+			RedisAddr: payload.RedisAddr,
+		}
+
+		task, _ := tasks.NewSessionHealthCheckTask(healthCheckPayload)
+		_, err = client.Enqueue(task,
+			asynq.ProcessIn(30*time.Second),
+			asynq.Queue(payload.QueueName),
+		)
+		if err != nil {
+			log.Printf("[TASK] Warning: Failed to schedule health check: %v", err)
+		}
+
+		if payload.MaxSessionDuration > 0 {
+			timeoutPayload := tasks.SessionTimeoutPayload{
+				SessionID: sess.ID,
+			}
+
+			timeoutTask, _ := tasks.NewSessionTimeoutTask(timeoutPayload)
+			_, err = client.Enqueue(timeoutTask,
+				asynq.ProcessIn(time.Duration(payload.MaxSessionDuration)*time.Second),
+				asynq.Queue(payload.QueueName),
+				asynq.Unique(time.Duration(payload.MaxSessionDuration)*time.Second),
+			)
 			if err != nil {
-				log.Printf("Error getting worker status: %v", err)
-				continue
-			}
-
-			if currentWorker.MaxSlots != worker.MaxSlots {
-				log.Printf("Remote update detected: max_slots %d → %d",
-					worker.MaxSlots, currentWorker.MaxSlots)
-				worker.MaxSlots = currentWorker.MaxSlots
-			}
-			worker.Paused = currentWorker.Paused
-
-			if currentWorker.Paused {
-				log.Println("Worker is paused, skipping work polling")
-				continue
-			}
-
-			availableSlots := worker.MaxSlots - int(atomic.LoadInt32(&worker.activeCount))
-			if availableSlots <= 0 {
-				continue
-			}
-
-			sessions, err := ws.DequeueSessions(ctx, worker.PoolID, worker.ID, availableSlots)
-			if err != nil {
-				log.Printf("Error dequeuing sessions: %v", err)
-				continue
-			}
-
-			for _, sess := range sessions {
-				go handleSession(ctx, prov, ss, ws, worker, sess)
-			}
-
-		case <-heartbeatTicker.C:
-			activeCount := int(atomic.LoadInt32(&worker.activeCount))
-			if err := ws.Heartbeat(ctx, worker.ID, activeCount); err != nil {
-				log.Printf("Error sending heartbeat: %v", err)
+				log.Printf("[TASK] Warning: Failed to schedule timeout: %v", err)
 			}
 		}
+
+		return nil
 	}
 }
 
-func handleSession(
-	ctx context.Context,
-	prov provider.Provisioner,
-	ss *sessions.Store,
-	ws *workpool.Store,
-	worker *WorkerRuntime,
-	sess sessions.Session,
-) {
-	atomic.AddInt32(&worker.activeCount, 1)
-	defer atomic.AddInt32(&worker.activeCount, -1)
+func handleSessionStop(store *sessions.Store, prov provider.Provisioner, profileStore *profiles.Store, localProfileStore *profiles.LocalProfileStore) asynq.HandlerFunc {
+	return func(ctx context.Context, t *asynq.Task) error {
+		var payload tasks.SessionStopPayload
+		if err := payload.Unmarshal(t.Payload()); err != nil {
+			return fmt.Errorf("failed to unmarshal payload: %w", err)
+		}
 
-	log.Printf("Starting session %s", sess.ID)
+		log.Printf("[TASK] Stopping session %s", payload.SessionID)
 
-	// Get work pool configuration for session duration settings
-	pool, err := ws.GetWorkPool(ctx, worker.PoolID)
-	if err != nil {
-		log.Printf("Failed to get work pool for session %s: %v", sess.ID, err)
-		ss.UpdateSessionStatus(ctx, sess.ID, sessions.StatusFailed)
-		return
-	}
+		sess, err := store.GetSession(ctx, payload.SessionID)
+		if err != nil {
+			return fmt.Errorf("failed to get session: %w", err)
+		}
 
-	wsURL, liveURL, err := prov.Start(ctx, &sess)
-	if err != nil {
-		log.Printf("Failed to start session %s: %v", sess.ID, err)
-		ss.UpdateSessionStatus(ctx, sess.ID, sessions.StatusFailed)
-		return
-	}
+		// Save profile data if session has a profile ID
+		if sess.ProfileID != nil {
+			log.Printf("[TASK] Updating profile metadata for session %s profile %s", sess.ID, *sess.ProfileID)
 
-	if err := ss.UpdateSessionEndpoints(ctx, sess.ID, wsURL, liveURL, sessions.StatusRunning); err != nil {
-		log.Printf("Failed to update session %s: %v", sess.ID, err)
-	}
-
-	log.Printf("Session %s is running: ws=%s, live=%s", sess.ID, wsURL, liveURL)
-
-	healthTicker := time.NewTicker(30 * time.Second)
-	defer healthTicker.Stop()
-
-	// Use work pool's MaxSessionDuration, default to 30 minutes if not set
-	sessionDuration := 30 * time.Minute
-	if pool.MaxSessionDuration > 0 {
-		sessionDuration = time.Duration(pool.MaxSessionDuration) * time.Second
-	}
-
-	// Set timeout slightly longer than session duration to allow for graceful completion
-	sessionTimeout := sessionDuration + (1 * time.Minute)
-	timeoutCtx, timeoutCancel := context.WithTimeout(ctx, sessionTimeout)
-	defer timeoutCancel()
-
-	log.Printf("Session %s will run for max %v (pool: %s)", sess.ID, sessionDuration, pool.Name)
-
-	for {
-		select {
-		case <-timeoutCtx.Done():
-			log.Printf("Session %s timed out", sess.ID)
-			ss.UpdateSessionStatus(ctx, sess.ID, sessions.StatusTimedOut)
-			goto cleanup
-
-		case <-healthTicker.C:
-			if err := prov.HealthCheck(ctx, &sess); err != nil {
-				log.Printf("Session %s health check failed: %v", sess.ID, err)
-				ss.UpdateSessionStatus(ctx, sess.ID, sessions.StatusFailed)
-				goto cleanup
-			}
-
-			if metrics, err := prov.GetMetrics(ctx, &sess); err == nil {
-				ss.CreateMetrics(ctx, metrics)
-			}
-
-			// Check if session has reached its configured duration
-			if time.Since(sess.CreatedAt) > sessionDuration {
-				log.Printf("Session %s completed after %v", sess.ID, time.Since(sess.CreatedAt))
-				ss.UpdateSessionStatus(ctx, sess.ID, sessions.StatusCompleted)
-				goto cleanup
+			// With volume mounting, the profile data is already persisted
+			// We just need to update the metadata (size, last used timestamp)
+			if err := localProfileStore.SaveProfileData(ctx, sess.ProfileID.String(), ""); err != nil {
+				log.Printf("[TASK] Warning: Failed to update profile metadata: %v", err)
+			} else {
+				// Update profile size and last used timestamp
+				if size, err := localProfileStore.GetProfileSize(ctx, sess.ProfileID.String()); err == nil {
+					profileStore.UpdateProfileSize(ctx, *sess.ProfileID, size)
+				}
+				profileStore.UpdateProfileLastUsed(ctx, *sess.ProfileID)
+				log.Printf("[TASK] ✓ Profile metadata updated successfully")
 			}
 		}
-	}
 
-cleanup:
-	if err := prov.Stop(ctx, &sess); err != nil {
-		log.Printf("Error stopping session %s: %v", sess.ID, err)
-	}
+		if err := prov.Stop(ctx, sess); err != nil {
+			log.Printf("[TASK] ✗ Error stopping provider for session %s: %v", sess.ID, err)
+		}
 
-	log.Printf("Session %s finished", sess.ID)
+		status := sessions.StatusCompleted
+		if payload.Reason == "timeout" {
+			status = sessions.StatusTimedOut
+		} else if payload.Reason == "failed" {
+			status = sessions.StatusFailed
+		}
+
+		if err := store.UpdateSessionStatus(ctx, sess.ID, status); err != nil {
+			return fmt.Errorf("failed to update session status: %w", err)
+		}
+
+		log.Printf("[TASK] ✓ Session %s stopped (reason: %s)", sess.ID, payload.Reason)
+		return nil
+	}
 }
 
-func ensureDefaultPool(ctx context.Context, store *workpool.Store, provider string) (*workpool.WorkPool, error) {
-	name := fmt.Sprintf("default-%s", provider)
+func handleSessionHealthCheck(store *sessions.Store, prov provider.Provisioner) asynq.HandlerFunc {
+	return func(ctx context.Context, t *asynq.Task) error {
+		var payload tasks.SessionHealthCheckPayload
+		if err := payload.Unmarshal(t.Payload()); err != nil {
+			return fmt.Errorf("failed to unmarshal payload: %w", err)
+		}
 
-	pool, err := store.GetWorkPoolByName(ctx, name)
-	if err == nil {
-		return pool, nil
-	}
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
-	}
+		sess, err := store.GetSession(ctx, payload.SessionID)
+		if err != nil {
+			return fmt.Errorf("failed to get session: %w", err)
+		}
 
-	pool = &workpool.WorkPool{
-		Name:               name,
-		Provider:           workpool.ProviderType(provider),
-		MaxConcurrency:     10,
-		MaxSessionDuration: 900, // 15 minutes default
-		AutoScale:          true,
+		if sessions.IsTerminalStatus(sess.Status) {
+			log.Printf("[HEALTH] Session %s is in terminal state %s, skipping health check", sess.ID, sess.Status)
+			return nil
+		}
+
+		if err := prov.HealthCheck(ctx, sess); err != nil {
+			log.Printf("[HEALTH] ✗ Session %s health check failed: %v", sess.ID, err)
+
+			store.UpdateSessionStatus(ctx, sess.ID, sessions.StatusCrashed)
+
+			client := asynq.NewClient(asynq.RedisClientOpt{Addr: payload.RedisAddr})
+			defer client.Close()
+
+			stopPayload := tasks.SessionStopPayload{
+				SessionID: sess.ID,
+				Reason:    "health_check_failed",
+			}
+
+			stopTask, _ := tasks.NewSessionStopTask(stopPayload)
+			client.Enqueue(stopTask, asynq.Queue("critical"))
+
+			return nil
+		}
+
+		if metrics, err := prov.GetMetrics(ctx, sess); err == nil {
+			store.CreateMetrics(ctx, metrics)
+			log.Printf("[METRICS] %s: CPU=%.1f%%, Memory=%.0fMB",
+				sess.ID,
+				safeDeref(metrics.CPUPercent, 0.0),
+				safeDeref(metrics.MemoryMB, 0.0))
+		}
+
+		client := asynq.NewClient(asynq.RedisClientOpt{Addr: payload.RedisAddr})
+		defer client.Close()
+
+		nextHealthCheck, _ := tasks.NewSessionHealthCheckTask(payload)
+		_, err = client.Enqueue(nextHealthCheck,
+			asynq.ProcessIn(30*time.Second),
+			asynq.Queue("default"),
+		)
+
+		return err
 	}
-	if err := store.CreateWorkPool(ctx, pool); err != nil {
-		return nil, err
+}
+
+func handleSessionTimeout(store *sessions.Store, prov provider.Provisioner, redisAddr string) asynq.HandlerFunc {
+	return func(ctx context.Context, t *asynq.Task) error {
+		var payload tasks.SessionTimeoutPayload
+		if err := payload.Unmarshal(t.Payload()); err != nil {
+			return fmt.Errorf("failed to unmarshal payload: %w", err)
+		}
+
+		log.Printf("[TIMEOUT] Session %s has reached its maximum duration", payload.SessionID)
+
+		client := asynq.NewClient(asynq.RedisClientOpt{Addr: redisAddr})
+		defer client.Close()
+
+		stopPayload := tasks.SessionStopPayload{
+			SessionID: payload.SessionID,
+			Reason:    "timeout",
+		}
+
+		stopTask, _ := tasks.NewSessionStopTask(stopPayload)
+		_, err := client.Enqueue(stopTask, asynq.Queue("default"))
+
+		return err
 	}
-	log.Printf("Created default work-pool: %s (%s)", pool.Name, pool.ID)
-	return pool, nil
+}
+
+func healthCheck(store *sessions.Store) func() error {
+	return func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		db := store.GetDB()
+		sqlDB, err := db.DB()
+		if err != nil {
+			return err
+		}
+
+		return sqlDB.PingContext(ctx)
+	}
 }
 
 func loadConfig() WorkerConfig {
 	cfg := WorkerConfig{
-		PollInterval: 10 * time.Second,
-		Concurrency:  1,
+		Concurrency: 10,
+		Queues: map[string]int{
+			"critical": 10,
+			"default":  5,
+			"low":      1,
+		},
 	}
 
-	flag.StringVar(&cfg.WorkPoolID, "pool", "", "Work pool ID (optional - will create default if not provided)")
 	flag.StringVar(&cfg.Name, "name", "", "Worker name")
 	flag.StringVar(&cfg.Provider, "provider", "docker", "Provider type (docker, local, aci)")
-	flag.IntVar(&cfg.Concurrency, "concurrency", 1, "Maximum concurrent sessions")
+	flag.IntVar(&cfg.Concurrency, "concurrency", 10, "Maximum concurrent tasks")
 	flag.StringVar(&cfg.DatabaseURL, "db", "", "Database URL")
-	flag.DurationVar(&cfg.PollInterval, "poll-interval", 10*time.Second, "Poll interval for work")
+	flag.StringVar(&cfg.RedisAddr, "redis", "redis:6379", "Redis address")
 
 	flag.Parse()
 
@@ -334,11 +360,57 @@ func loadConfig() WorkerConfig {
 		cfg.Name = fmt.Sprintf("worker-%s", hostname)
 	}
 
-	cfg.Hostname, _ = os.Hostname()
-
 	return cfg
+}
+
+// handleDeploymentRun handles deployment run tasks
+func handleDeploymentRun(runner *deployments.DeploymentRunner) asynq.HandlerFunc {
+	return func(ctx context.Context, t *asynq.Task) error {
+		var payload tasks.DeploymentRunPayload
+		if err := payload.Unmarshal(t.Payload()); err != nil {
+			return fmt.Errorf("failed to unmarshal payload: %w", err)
+		}
+
+		log.Printf("[DEPLOYMENT] Starting deployment run %s for deployment %s", payload.RunID, payload.DeploymentID)
+
+		if err := runner.ExecuteDeployment(ctx, payload.RunID); err != nil {
+			log.Printf("[DEPLOYMENT] ✗ Failed to execute deployment run %s: %v", payload.RunID, err)
+			return fmt.Errorf("failed to execute deployment: %w", err)
+		}
+
+		log.Printf("[DEPLOYMENT] ✓ Deployment run %s completed successfully", payload.RunID)
+		return nil
+	}
+}
+
+// handleDeploymentSchedule handles deployment schedule tasks
+func handleDeploymentSchedule(runner *deployments.DeploymentRunner) asynq.HandlerFunc {
+	return func(ctx context.Context, t *asynq.Task) error {
+		var payload tasks.DeploymentSchedulePayload
+		if err := payload.Unmarshal(t.Payload()); err != nil {
+			return fmt.Errorf("failed to unmarshal payload: %w", err)
+		}
+
+		log.Printf("[DEPLOYMENT] Processing scheduled deployment %s", payload.DeploymentID)
+
+		// TODO: Implement deployment scheduling logic
+		// This would involve:
+		// 1. Parsing the cron schedule
+		// 2. Creating new deployment runs based on the schedule
+		// 3. Enqueuing deployment run tasks
+
+		log.Printf("[DEPLOYMENT] ✓ Deployment schedule %s processed successfully", payload.DeploymentID)
+		return nil
+	}
 }
 
 func connectDB(databaseURL string) (*gorm.DB, error) {
 	return gorm.Open(postgres.Open(databaseURL), &gorm.Config{})
+}
+
+func safeDeref[T any](ptr *T, defaultVal T) T {
+	if ptr == nil {
+		return defaultVal
+	}
+	return *ptr
 }

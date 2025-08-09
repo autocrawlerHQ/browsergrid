@@ -23,6 +23,7 @@ services:
       dockerfile: docker/browsers/${BROWSER:-chrome}/Dockerfile
       args:
         BROWSER_VERSION: ${BROWSER_VERSION:-latest}
+        PLAYWRIGHT_VERSION: ${PLAYWRIGHT_VERSION:-latest}
     shm_size: ${SHM_SIZE:-2gb}
     volumes:
       - /dev/shm:/dev/shm
@@ -33,33 +34,16 @@ services:
       - ENABLE_VNC=${ENABLE_VNC:-true}
       - HEADLESS=${HEADLESS:-false}
     ports:
-      - "${VNC_PORT:-5900}:5900"          
-      - "${NOVNC_PORT:-6080}:6080"       
-      - "9222:9222"
+      - "80:80"
+      - "443:443"
     networks:
       - browsergrid
-      
-  browsermux:
-    container_name: browsergrid-browsermux
-    image: browsergrid/browsermux:latest
-    build:
-      context: ..
-      dockerfile: docker/browsermux/Dockerfile
-    env_file:
-      - ../.env
-    environment:
-      - PORT=${BROWSERMUX_PORT:-8080}
-      - BROWSER_URL=http://browser:9222
-      - VNC_URL=http://browser:6080
-      - MAX_MESSAGE_SIZE=${MAX_MESSAGE_SIZE:-1048576}
-      - CONNECTION_TIMEOUT_SECONDS=${CONNECTION_TIMEOUT_SECONDS:-10}
-    ports:
-      - "${BROWSERMUX_PORT:-8080}:8080"
-    networks:
-      - browsergrid
-    depends_on:
-      browser:
-        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/health && curl -f http://localhost:80/json/version || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
         
   cua:
     container_name: browsergrid-cua
@@ -70,14 +54,14 @@ services:
       - ../.env
     environment:
       - PORT=${CUA_PORT:-3000}
-      - BROWSERMUX_URL=http://browsermux:${BROWSERMUX_PORT:-8080}
       - NODE_ENV=${NODE_ENV:-production}
     ports:
       - "${CUA_PORT:-3000}:3000"
     networks:
       - browsergrid
     depends_on:
-      - browsermux
+      browser:
+        condition: service_healthy
 
 networks:
   browsergrid:

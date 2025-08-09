@@ -20,10 +20,21 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-type mockPoolService struct{}
+type mockPoolService struct {
+	db *gorm.DB
+}
 
 func (m *mockPoolService) GetOrCreateDefault(ctx context.Context, provider string) (uuid.UUID, error) {
-	return uuid.New(), nil
+	poolID := uuid.New()
+
+	// Create a work pool record in the database for the test
+	err := m.db.Exec("INSERT INTO work_pools (id, name, provider, max_session_duration, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+		poolID, "default-"+provider, provider, 1800, time.Now(), time.Now()).Error
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	return poolID, nil
 }
 
 func setupHTTPTestDB(t *testing.T) (*gorm.DB, *gin.Engine) {
@@ -40,12 +51,20 @@ func setupHTTPTestDB(t *testing.T) (*gorm.DB, *gin.Engine) {
 	err = db.AutoMigrate(&Session{}, &SessionEvent{}, &SessionMetrics{}, &Pool{})
 	require.NoError(t, err)
 
+	// Import workpool model to get the correct WorkPool structure
+	// Add a dummy WorkPool to migrate the table
+	db.Exec("CREATE TABLE IF NOT EXISTS work_pools (id uuid PRIMARY KEY, name TEXT, provider TEXT, max_session_duration INTEGER, created_at TIMESTAMP, updated_at TIMESTAMP)")
+
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 
 	v1 := router.Group("/api/v1")
-	mockPool := &mockPoolService{}
-	RegisterRoutes(v1, db, mockPool)
+	mockPool := &mockPoolService{db: db}
+	RegisterRoutes(v1, Dependencies{
+		DB:         db,
+		PoolSvc:    mockPool,
+		TaskClient: nil, // Set to nil for testing
+	})
 
 	return db, router
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, User, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,6 +8,8 @@ import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { useGetApiV1Profiles } from '@/lib/api/profiles/profiles';
 import type { Session, Browser, BrowserVersion, OperatingSystem } from '@/lib/api/model';
 
 interface SessionFormProps {
@@ -25,6 +27,8 @@ export function SessionForm({
   onCancel, 
   isLoading = false 
 }: SessionFormProps) {
+  const { data: profilesData } = useGetApiV1Profiles();
+  
   const updateSession = (updates: Partial<Session>) => {
     onSessionChange({ ...session, ...updates });
   };
@@ -144,6 +148,64 @@ export function SessionForm({
                 onCheckedChange={(checked) => updateSession({ headless: checked })}
               />
               <Label htmlFor="headless">Headless mode</Label>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Profile Configuration */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <User className="h-4 w-4" />
+              Profile Configuration
+            </CardTitle>
+            <CardDescription>
+              Optionally attach a browser profile to save and restore session state
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="profile">Browser Profile (Optional)</Label>
+              <Select 
+                value={session.profile_id || 'none'} 
+                onValueChange={(value) => updateSession({ profile_id: value === 'none' ? undefined : value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a profile (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No profile</SelectItem>
+                  {profilesData?.profiles?.map((profile) => (
+                    <SelectItem key={profile.id} value={profile.id || ''}>
+                      <div className="flex items-center justify-between w-full">
+                        <span>{profile.name}</span>
+                        <Badge variant="outline" className="ml-2 text-xs">
+                          {profile.browser}
+                        </Badge>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {session.profile_id && session.profile_id !== 'none' && profilesData?.profiles && (
+                <div className="text-xs text-neutral-600 flex items-start gap-2 p-2 bg-neutral-50 rounded">
+                  <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <div className="font-medium">
+                      {profilesData.profiles.find(p => p.id === session.profile_id)?.name}
+                    </div>
+                    <div className="text-neutral-500">
+                      {profilesData.profiles.find(p => p.id === session.profile_id)?.description || 'No description'}
+                    </div>
+                    <div className="text-neutral-500">
+                      Size: {profilesData.profiles.find(p => p.id === session.profile_id)?.size_bytes 
+                        ? `${(profilesData.profiles.find(p => p.id === session.profile_id)!.size_bytes! / 1024 / 1024).toFixed(1)} MB`
+                        : 'Unknown'
+                      }
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

@@ -2,39 +2,44 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"log"
 	"os"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/modules/redis"
 	"github.com/testcontainers/testcontainers-go/wait"
 	"gorm.io/datatypes"
 	postgresDriver "gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"github.com/autocrawlerHQ/browsergrid/internal/profiles"
 	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
+	"github.com/autocrawlerHQ/browsergrid/internal/tasks"
 	"github.com/autocrawlerHQ/browsergrid/internal/workpool"
 )
 
 var (
-	testContainer *postgres.PostgresContainer
-	testConnStr   string
+	testPostgresContainer *postgres.PostgresContainer
+	testRedisContainer    *redis.RedisContainer
+	testConnStr           string
+	testRedisAddr         string
 )
 
 func TestMain(m *testing.M) {
 	ctx := context.Background()
 
 	var err error
-	testContainer, err = postgres.Run(ctx,
+	testPostgresContainer, err = postgres.Run(ctx,
 		"postgres:15-alpine",
 		postgres.WithDatabase("testdb"),
 		postgres.WithUsername("testuser"),
@@ -49,15 +54,39 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Failed to start PostgreSQL container: %v", err)
 	}
 
-	testConnStr, err = testContainer.ConnectionString(ctx, "sslmode=disable")
+	testConnStr, err = testPostgresContainer.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
 		log.Fatalf("Failed to get connection string: %v", err)
 	}
 
+	testRedisContainer, err = redis.Run(ctx,
+		"redis:7-alpine",
+		redis.WithSnapshotting(10, 1),
+		redis.WithLogLevel(redis.LogLevelVerbose),
+	)
+	if err != nil {
+		log.Fatalf("Failed to start Redis container: %v", err)
+	}
+
+	redisHost, err := testRedisContainer.Host(ctx)
+	if err != nil {
+		log.Fatalf("Failed to get Redis host: %v", err)
+	}
+
+	redisPort, err := testRedisContainer.MappedPort(ctx, "6379")
+	if err != nil {
+		log.Fatalf("Failed to get Redis port: %v", err)
+	}
+
+	testRedisAddr = redisHost + ":" + redisPort.Port()
+
 	code := m.Run()
 
-	if err := testContainer.Terminate(ctx); err != nil {
+	if err := testPostgresContainer.Terminate(ctx); err != nil {
 		log.Printf("Failed to terminate PostgreSQL container: %v", err)
+	}
+	if err := testRedisContainer.Terminate(ctx); err != nil {
+		log.Printf("Failed to terminate Redis container: %v", err)
 	}
 
 	os.Exit(code)
@@ -71,7 +100,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 
 	err = db.Migrator().DropTable(
 		&sessions.Session{}, &sessions.SessionEvent{}, &sessions.SessionMetrics{}, &sessions.Pool{},
-		&workpool.WorkPool{}, &workpool.Worker{},
+		&workpool.WorkPool{},
 	)
 	if err != nil {
 		t.Logf("Warning: Failed to drop tables (may not exist): %v", err)
@@ -79,7 +108,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 
 	err = db.AutoMigrate(
 		&sessions.Session{}, &sessions.SessionEvent{}, &sessions.SessionMetrics{}, &sessions.Pool{},
-		&workpool.WorkPool{}, &workpool.Worker{},
+		&workpool.WorkPool{},
 	)
 	require.NoError(t, err)
 
@@ -93,13 +122,10 @@ type MockProvider struct {
 	StartError       error
 	StopError        error
 	Metrics          *sessions.SessionMetrics
-	ProviderType     workpool.ProviderType
 }
 
-func NewMockProvider(providerType workpool.ProviderType) *MockProvider {
-	return &MockProvider{
-		ProviderType: providerType,
-	}
+func NewMockProvider() *MockProvider {
+	return &MockProvider{}
 }
 
 func (m *MockProvider) Start(ctx context.Context, sess *sessions.Session) (wsURL, liveURL string, err error) {
@@ -123,20 +149,21 @@ func (m *MockProvider) GetMetrics(ctx context.Context, sess *sessions.Session) (
 	if m.Metrics != nil {
 		return m.Metrics, nil
 	}
+	cpu := 25.5
+	memory := 512.0
+	rx := int64(1024)
+	tx := int64(2048)
 	return &sessions.SessionMetrics{
 		SessionID:      sess.ID,
-		CPUPercent:     &[]float64{25.5}[0],
-		MemoryMB:       &[]float64{512.0}[0],
-		NetworkRXBytes: &[]int64{1024}[0],
-		NetworkTXBytes: &[]int64{2048}[0],
+		CPUPercent:     &cpu,
+		MemoryMB:       &memory,
+		NetworkRXBytes: &rx,
+		NetworkTXBytes: &tx,
 	}, nil
 }
 
 func (m *MockProvider) GetType() workpool.ProviderType {
-	if m.ProviderType == "" {
-		return workpool.ProviderDocker
-	}
-	return m.ProviderType
+	return workpool.ProviderType("mock")
 }
 
 func TestLoadConfig(t *testing.T) {
@@ -144,38 +171,32 @@ func TestLoadConfig(t *testing.T) {
 	defer func() { os.Args = originalArgs }()
 
 	tests := []struct {
-		name        string
-		args        []string
-		env         map[string]string
-		expectFatal bool
-		validate    func(t *testing.T, cfg WorkerConfig)
+		name     string
+		args     []string
+		env      map[string]string
+		validate func(t *testing.T, cfg WorkerConfig)
 	}{
 		{
 			name: "valid config with all flags",
 			args: []string{
 				"worker",
-				"--pool", "550e8400-e29b-41d4-a716-446655440000",
 				"--name", "test-worker",
 				"--provider", "docker",
 				"--concurrency", "3",
 				"--db", "postgres://test:test@localhost/test",
-				"--poll-interval", "5s",
+				"--redis", "localhost:6380",
 			},
 			validate: func(t *testing.T, cfg WorkerConfig) {
-				assert.Equal(t, "550e8400-e29b-41d4-a716-446655440000", cfg.WorkPoolID)
 				assert.Equal(t, "test-worker", cfg.Name)
 				assert.Equal(t, "docker", cfg.Provider)
 				assert.Equal(t, 3, cfg.Concurrency)
 				assert.Equal(t, "postgres://test:test@localhost/test", cfg.DatabaseURL)
-				assert.Equal(t, 5*time.Second, cfg.PollInterval)
+				assert.Equal(t, "localhost:6380", cfg.RedisAddr)
 			},
 		},
 		{
 			name: "config with environment variables",
-			args: []string{
-				"worker",
-				"--pool", "550e8400-e29b-41d4-a716-446655440000",
-			},
+			args: []string{"worker"},
 			env: map[string]string{
 				"DATABASE_URL": "postgres://env:env@localhost/env",
 			},
@@ -186,23 +207,13 @@ func TestLoadConfig(t *testing.T) {
 		},
 		{
 			name: "config with defaults",
-			args: []string{
-				"worker",
-				"--pool", "550e8400-e29b-41d4-a716-446655440000",
-			},
-			validate: func(t *testing.T, cfg WorkerConfig) {
-				assert.Equal(t, 1, cfg.Concurrency)
-				assert.Equal(t, "docker", cfg.Provider)
-				assert.Equal(t, 10*time.Second, cfg.PollInterval)
-				assert.Equal(t, "postgres://user:password@localhost/browsergrid?sslmode=disable", cfg.DatabaseURL)
-			},
-		},
-		{
-			name: "missing required pool flag",
 			args: []string{"worker"},
 			validate: func(t *testing.T, cfg WorkerConfig) {
+				assert.Equal(t, 10, cfg.Concurrency)
+				assert.Equal(t, "docker", cfg.Provider)
+				assert.Equal(t, "localhost:6379", cfg.RedisAddr)
+				assert.Equal(t, "postgres://user:password@localhost/browsergrid?sslmode=disable", cfg.DatabaseURL)
 			},
-			expectFatal: true,
 		},
 	}
 
@@ -218,22 +229,8 @@ func TestLoadConfig(t *testing.T) {
 			flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 			os.Args = tt.args
 
-			if tt.expectFatal {
-				cfg := WorkerConfig{
-					PollInterval: 10 * time.Second,
-					Concurrency:  1,
-				}
-
-				flag.StringVar(&cfg.WorkPoolID, "pool", "", "Work pool ID (required)")
-				flag.Parse()
-
-				if cfg.WorkPoolID == "" {
-					return
-				}
-			} else {
-				cfg := loadConfig()
-				tt.validate(t, cfg)
-			}
+			cfg := loadConfig()
+			tt.validate(t, cfg)
 		})
 	}
 }
@@ -278,64 +275,31 @@ func TestConnectDB(t *testing.T) {
 	}
 }
 
-func TestWorkerRuntime_AtomicOperations(t *testing.T) {
-	worker := &WorkerRuntime{
-		Worker: &workpool.Worker{
-			ID:       uuid.New(),
-			MaxSlots: 5,
-			Active:   0,
-		},
-		activeCount: 0,
-	}
-
-	atomic.AddInt32(&worker.activeCount, 1)
-	assert.Equal(t, int32(1), atomic.LoadInt32(&worker.activeCount))
-
-	atomic.AddInt32(&worker.activeCount, 2)
-	assert.Equal(t, int32(3), atomic.LoadInt32(&worker.activeCount))
-
-	atomic.AddInt32(&worker.activeCount, -1)
-	assert.Equal(t, int32(2), atomic.LoadInt32(&worker.activeCount))
-}
-
-func TestHandleSession(t *testing.T) {
+func TestHandleSessionStart(t *testing.T) {
 	db := setupTestDB(t)
-	ws := workpool.NewStore(db)
-	ss := sessions.NewStore(db)
+	sessStore := sessions.NewStore(db)
+	mockProvider := NewMockProvider()
 
 	pool := &workpool.WorkPool{
-		Name:           "test-pool",
-		Provider:       workpool.ProviderDocker,
-		MaxConcurrency: 10,
+		Name:               "test-pool",
+		Provider:           workpool.ProviderDocker,
+		MaxConcurrency:     10,
+		MaxSessionDuration: 300,
 	}
 	ctx := context.Background()
-	err := ws.CreateWorkPool(ctx, pool)
-	require.NoError(t, err)
-
-	worker := &WorkerRuntime{
-		Worker: &workpool.Worker{
-			ID:       uuid.New(),
-			PoolID:   pool.ID,
-			Name:     "test-worker",
-			MaxSlots: 5,
-			Active:   0,
-		},
-		activeCount: 0,
-	}
-	err = ws.RegisterWorker(ctx, worker.Worker)
+	err := db.Create(pool).Error
 	require.NoError(t, err)
 
 	tests := []struct {
 		name          string
-		session       sessions.Session
-		provider      *MockProvider
-		expectStarted bool
-		expectStopped bool
-		timeout       time.Duration
+		session       *sessions.Session
+		providerError error
+		expectError   bool
+		checkStatus   sessions.SessionStatus
 	}{
 		{
-			name: "session with provider start error",
-			session: sessions.Session{
+			name: "successful session start",
+			session: &sessions.Session{
 				ID:              uuid.New(),
 				Browser:         sessions.BrowserChrome,
 				Version:         sessions.VerLatest,
@@ -343,22 +307,17 @@ func TestHandleSession(t *testing.T) {
 				Screen: sessions.ScreenConfig{
 					Width: 1920, Height: 1080, DPI: 96, Scale: 1.0,
 				},
-				Status:      sessions.StatusStarting,
+				Status:      sessions.StatusPending,
 				WorkPoolID:  &pool.ID,
-				WorkerID:    &worker.ID,
 				Environment: datatypes.JSON(`{}`),
 			},
-			provider: &MockProvider{
-				StartError:   assert.AnError,
-				ProviderType: workpool.ProviderDocker,
-			},
-			expectStarted: true,
-			expectStopped: false,
-			timeout:       2 * time.Second,
+			providerError: nil,
+			expectError:   false,
+			checkStatus:   sessions.StatusRunning,
 		},
 		{
-			name: "session with health check failure",
-			session: sessions.Session{
+			name: "provider start failure",
+			session: &sessions.Session{
 				ID:              uuid.New(),
 				Browser:         sessions.BrowserChrome,
 				Version:         sessions.VerLatest,
@@ -366,220 +325,301 @@ func TestHandleSession(t *testing.T) {
 				Screen: sessions.ScreenConfig{
 					Width: 1920, Height: 1080, DPI: 96, Scale: 1.0,
 				},
-				Status:      sessions.StatusStarting,
+				Status:      sessions.StatusPending,
 				WorkPoolID:  &pool.ID,
-				WorkerID:    &worker.ID,
 				Environment: datatypes.JSON(`{}`),
 			},
-			provider: &MockProvider{
-				ProviderType:     workpool.ProviderDocker,
-				HealthCheckError: assert.AnError,
-			},
-			expectStarted: true,
-			expectStopped: true,
-			timeout:       35 * time.Second,
+			providerError: errors.New("provider failed"),
+			expectError:   true,
+			checkStatus:   sessions.StatusFailed,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ss.CreateSession(ctx, &tt.session)
+			err := sessStore.CreateSession(ctx, tt.session)
 			require.NoError(t, err)
 
-			testCtx, cancel := context.WithTimeout(ctx, tt.timeout)
-			defer cancel()
+			mockProvider.StartCalled = false
+			mockProvider.StartError = tt.providerError
 
-			initialCount := atomic.LoadInt32(&worker.activeCount)
+			handler := handleSessionStart(sessStore, mockProvider)
 
-			done := make(chan struct{})
-			go func() {
-				defer close(done)
-				handleSession(testCtx, tt.provider, ss, ws, worker, tt.session)
-			}()
+			payload := tasks.SessionStartPayload{
+				SessionID:          tt.session.ID,
+				WorkPoolID:         pool.ID,
+				MaxSessionDuration: pool.MaxSessionDuration,
+				RedisAddr:          testRedisAddr,
+				QueueName:          "default",
+			}
+			data, _ := payload.Marshal()
+			task := asynq.NewTask(tasks.TypeSessionStart, data)
 
-			select {
-			case <-done:
-			case <-testCtx.Done():
-				t.Fatal("Session handling timed out")
+			err = handler(ctx, task)
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
 			}
 
-			assert.Equal(t, tt.expectStarted, tt.provider.StartCalled)
-			assert.Equal(t, tt.expectStopped, tt.provider.StopCalled)
+			assert.True(t, mockProvider.StartCalled)
 
-			finalCount := atomic.LoadInt32(&worker.activeCount)
-			assert.Equal(t, initialCount, finalCount, "Active count should return to initial value")
-
-			updatedSession, err := ss.GetSession(ctx, tt.session.ID)
+			updatedSession, err := sessStore.GetSession(ctx, tt.session.ID)
 			require.NoError(t, err)
+			assert.Equal(t, tt.checkStatus, updatedSession.Status)
 
-			if tt.provider.StartError != nil {
-				assert.Equal(t, sessions.StatusFailed, updatedSession.Status)
-			} else {
-				assert.NotEqual(t, sessions.StatusStarting, updatedSession.Status)
+			if !tt.expectError {
+				assert.NotNil(t, updatedSession.WSEndpoint)
+				assert.NotNil(t, updatedSession.LiveURL)
 			}
 		})
 	}
 }
 
-func TestRunWorker_Basic(t *testing.T) {
+func TestHandleSessionStop(t *testing.T) {
 	db := setupTestDB(t)
-	ws := workpool.NewStore(db)
-	ss := sessions.NewStore(db)
+	sessStore := sessions.NewStore(db)
+	mockProvider := NewMockProvider()
+	profileStore := profiles.NewStore(db)
+	localProfileStore, err := profiles.NewLocalProfileStore("")
+	require.NoError(t, err)
 
-	pool := &workpool.WorkPool{
-		Name:           "test-pool",
-		Provider:       workpool.ProviderDocker,
-		MaxConcurrency: 10,
-	}
 	ctx := context.Background()
-	err := ws.CreateWorkPool(ctx, pool)
-	require.NoError(t, err)
 
-	worker := &WorkerRuntime{
-		Worker: &workpool.Worker{
-			ID:       uuid.New(),
-			PoolID:   pool.ID,
-			Name:     "test-worker",
-			MaxSlots: 2,
-			Active:   0,
-		},
-		activeCount: 0,
-	}
-	err = ws.RegisterWorker(ctx, worker.Worker)
-	require.NoError(t, err)
-
-	mockProvider := NewMockProvider(workpool.ProviderDocker)
-
-	testSessions := []*sessions.Session{
+	tests := []struct {
+		name        string
+		session     *sessions.Session
+		reason      string
+		expectError bool
+		finalStatus sessions.SessionStatus
+	}{
 		{
-			Browser:         sessions.BrowserChrome,
-			Version:         sessions.VerLatest,
-			OperatingSystem: sessions.OSLinux,
-			Screen: sessions.ScreenConfig{
-				Width: 1920, Height: 1080, DPI: 96, Scale: 1.0,
+			name: "stop running session",
+			session: &sessions.Session{
+				ID:              uuid.New(),
+				Browser:         sessions.BrowserChrome,
+				Version:         sessions.VerLatest,
+				OperatingSystem: sessions.OSLinux,
+				Screen: sessions.ScreenConfig{
+					Width: 1920, Height: 1080, DPI: 96, Scale: 1.0,
+				},
+				Status:      sessions.StatusRunning,
+				Environment: datatypes.JSON(`{}`),
 			},
-			Status:      sessions.StatusPending,
-			WorkPoolID:  &pool.ID,
-			Environment: datatypes.JSON(`{}`),
+			reason:      "user_requested",
+			expectError: false,
+			finalStatus: sessions.StatusCompleted,
+		},
+		{
+			name: "stop session due to timeout",
+			session: &sessions.Session{
+				ID:              uuid.New(),
+				Browser:         sessions.BrowserChrome,
+				Version:         sessions.VerLatest,
+				OperatingSystem: sessions.OSLinux,
+				Screen: sessions.ScreenConfig{
+					Width: 1920, Height: 1080, DPI: 96, Scale: 1.0,
+				},
+				Status:      sessions.StatusRunning,
+				Environment: datatypes.JSON(`{}`),
+			},
+			reason:      "timeout",
+			expectError: false,
+			finalStatus: sessions.StatusTimedOut,
+		},
+		{
+			name: "stop failed session",
+			session: &sessions.Session{
+				ID:              uuid.New(),
+				Browser:         sessions.BrowserChrome,
+				Version:         sessions.VerLatest,
+				OperatingSystem: sessions.OSLinux,
+				Screen: sessions.ScreenConfig{
+					Width: 1920, Height: 1080, DPI: 96, Scale: 1.0,
+				},
+				Status:      sessions.StatusRunning,
+				Environment: datatypes.JSON(`{}`),
+			},
+			reason:      "failed",
+			expectError: false,
+			finalStatus: sessions.StatusFailed,
 		},
 	}
 
-	for _, sess := range testSessions {
-		err := ss.CreateSession(ctx, sess)
-		require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := sessStore.CreateSession(ctx, tt.session)
+			require.NoError(t, err)
+
+			mockProvider.StopCalled = false
+
+			handler := handleSessionStop(sessStore, mockProvider, profileStore, localProfileStore)
+
+			payload := tasks.SessionStopPayload{
+				SessionID: tt.session.ID,
+				Reason:    tt.reason,
+			}
+			data, _ := payload.Marshal()
+			task := asynq.NewTask(tasks.TypeSessionStop, data)
+
+			err = handler(ctx, task)
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+
+			assert.True(t, mockProvider.StopCalled)
+
+			updatedSession, err := sessStore.GetSession(ctx, tt.session.ID)
+			require.NoError(t, err)
+			assert.Equal(t, tt.finalStatus, updatedSession.Status)
+		})
 	}
-
-	testCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
-	defer cancel()
-
-	err = runWorker(testCtx, worker, ws, ss, mockProvider, 100*time.Millisecond)
-
-	assert.Equal(t, context.DeadlineExceeded, err)
 }
 
-func TestRunWorker_PausedWorker(t *testing.T) {
+func TestHandleSessionHealthCheck(t *testing.T) {
 	db := setupTestDB(t)
-	ws := workpool.NewStore(db)
-	ss := sessions.NewStore(db)
+	sessStore := sessions.NewStore(db)
+	mockProvider := NewMockProvider()
 
-	pool := &workpool.WorkPool{
-		Name:           "test-pool",
-		Provider:       workpool.ProviderDocker,
-		MaxConcurrency: 10,
-	}
 	ctx := context.Background()
-	err := ws.CreateWorkPool(ctx, pool)
-	require.NoError(t, err)
 
-	worker := &WorkerRuntime{
-		Worker: &workpool.Worker{
-			ID:       uuid.New(),
-			PoolID:   pool.ID,
-			Name:     "test-worker",
-			MaxSlots: 2,
-			Active:   0,
-			Paused:   true,
+	tests := []struct {
+		name             string
+		session          *sessions.Session
+		healthCheckError error
+		expectStopTask   bool
+		expectedStatus   sessions.SessionStatus
+	}{
+		{
+			name: "healthy session",
+			session: &sessions.Session{
+				ID:              uuid.New(),
+				Browser:         sessions.BrowserChrome,
+				Version:         sessions.VerLatest,
+				OperatingSystem: sessions.OSLinux,
+				Screen: sessions.ScreenConfig{
+					Width: 1920, Height: 1080, DPI: 96, Scale: 1.0,
+				},
+				Status:      sessions.StatusRunning,
+				Environment: datatypes.JSON(`{}`),
+			},
+			healthCheckError: nil,
+			expectStopTask:   false,
+			expectedStatus:   sessions.StatusRunning,
 		},
-		activeCount: 0,
-	}
-	err = ws.RegisterWorker(ctx, worker.Worker)
-	require.NoError(t, err)
-
-	mockProvider := NewMockProvider(workpool.ProviderDocker)
-
-	testSession := &sessions.Session{
-		Browser:         sessions.BrowserChrome,
-		Version:         sessions.VerLatest,
-		OperatingSystem: sessions.OSLinux,
-		Screen: sessions.ScreenConfig{
-			Width: 1920, Height: 1080, DPI: 96, Scale: 1.0,
+		{
+			name: "unhealthy session",
+			session: &sessions.Session{
+				ID:              uuid.New(),
+				Browser:         sessions.BrowserChrome,
+				Version:         sessions.VerLatest,
+				OperatingSystem: sessions.OSLinux,
+				Screen: sessions.ScreenConfig{
+					Width: 1920, Height: 1080, DPI: 96, Scale: 1.0,
+				},
+				Status:      sessions.StatusRunning,
+				Environment: datatypes.JSON(`{}`),
+			},
+			healthCheckError: errors.New("container not responding"),
+			expectStopTask:   true,
+			expectedStatus:   sessions.StatusCrashed,
 		},
-		Status:      sessions.StatusPending,
-		WorkPoolID:  &pool.ID,
-		Environment: datatypes.JSON(`{}`),
+		{
+			name: "terminal state session",
+			session: &sessions.Session{
+				ID:              uuid.New(),
+				Browser:         sessions.BrowserChrome,
+				Version:         sessions.VerLatest,
+				OperatingSystem: sessions.OSLinux,
+				Screen: sessions.ScreenConfig{
+					Width: 1920, Height: 1080, DPI: 96, Scale: 1.0,
+				},
+				Status:      sessions.StatusCompleted,
+				Environment: datatypes.JSON(`{}`),
+			},
+			healthCheckError: nil,
+			expectStopTask:   false,
+			expectedStatus:   sessions.StatusCompleted,
+		},
 	}
-	err = ss.CreateSession(ctx, testSession)
-	require.NoError(t, err)
 
-	testCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
-	defer cancel()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := sessStore.CreateSession(ctx, tt.session)
+			require.NoError(t, err)
 
-	err = runWorker(testCtx, worker, ws, ss, mockProvider, 50*time.Millisecond)
-	assert.Equal(t, context.DeadlineExceeded, err)
+			mockProvider.HealthCheckError = tt.healthCheckError
 
-	assert.False(t, mockProvider.StartCalled)
+			redisOpt := asynq.RedisClientOpt{Addr: testRedisAddr}
+			inspector := asynq.NewInspector(redisOpt)
+
+			inspector.DeleteAllPendingTasks("critical")
+
+			handler := handleSessionHealthCheck(sessStore, mockProvider)
+
+			payload := tasks.SessionHealthCheckPayload{
+				SessionID: tt.session.ID,
+				RedisAddr: testRedisAddr,
+			}
+			data, _ := payload.Marshal()
+			task := asynq.NewTask(tasks.TypeSessionHealthCheck, data)
+
+			err = handler(ctx, task)
+			assert.NoError(t, err)
+
+			updatedSession, err := sessStore.GetSession(ctx, tt.session.ID)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expectedStatus, updatedSession.Status)
+
+			if tt.expectStopTask {
+				time.Sleep(100 * time.Millisecond)
+
+				pendingTasks, err := inspector.ListPendingTasks("critical")
+				require.NoError(t, err)
+
+				foundStopTask := false
+				for _, task := range pendingTasks {
+					if task.Type == tasks.TypeSessionStop {
+						foundStopTask = true
+						break
+					}
+				}
+				assert.True(t, foundStopTask, "Expected stop task to be enqueued")
+			}
+		})
+	}
 }
 
-func TestRunWorker_CapacityLimit(t *testing.T) {
+func TestHealthCheckFunction(t *testing.T) {
 	db := setupTestDB(t)
-	ws := workpool.NewStore(db)
-	ss := sessions.NewStore(db)
+	sessStore := sessions.NewStore(db)
 
-	pool := &workpool.WorkPool{
-		Name:           "test-pool",
-		Provider:       workpool.ProviderDocker,
-		MaxConcurrency: 10,
-	}
-	ctx := context.Background()
-	err := ws.CreateWorkPool(ctx, pool)
-	require.NoError(t, err)
+	healthFunc := healthCheck(sessStore)
 
-	worker := &WorkerRuntime{
-		Worker: &workpool.Worker{
-			ID:       uuid.New(),
-			PoolID:   pool.ID,
-			Name:     "test-worker",
-			MaxSlots: 1,
-			Active:   1,
+	err := healthFunc()
+	assert.NoError(t, err)
+
+	sqlDB, _ := db.DB()
+	sqlDB.Close()
+
+	err = healthFunc()
+	assert.Error(t, err)
+}
+
+func TestQueueConfiguration(t *testing.T) {
+	cfg := WorkerConfig{
+		Queues: map[string]int{
+			"critical": 10,
+			"default":  5,
+			"low":      1,
 		},
-		activeCount: 1,
 	}
-	err = ws.RegisterWorker(ctx, worker.Worker)
-	require.NoError(t, err)
 
-	mockProvider := NewMockProvider(workpool.ProviderDocker)
-
-	testSession := &sessions.Session{
-		Browser:         sessions.BrowserChrome,
-		Version:         sessions.VerLatest,
-		OperatingSystem: sessions.OSLinux,
-		Screen: sessions.ScreenConfig{
-			Width: 1920, Height: 1080, DPI: 96, Scale: 1.0,
-		},
-		Status:      sessions.StatusPending,
-		WorkPoolID:  &pool.ID,
-		Environment: datatypes.JSON(`{}`),
-	}
-	err = ss.CreateSession(ctx, testSession)
-	require.NoError(t, err)
-
-	testCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
-	defer cancel()
-
-	err = runWorker(testCtx, worker, ws, ss, mockProvider, 50*time.Millisecond)
-	assert.Equal(t, context.DeadlineExceeded, err)
-
-	assert.False(t, mockProvider.StartCalled)
+	assert.Equal(t, 10, cfg.Queues["critical"])
+	assert.Equal(t, 5, cfg.Queues["default"])
+	assert.Equal(t, 1, cfg.Queues["low"])
 }
 
 func createTestSession(poolID uuid.UUID, status sessions.SessionStatus) *sessions.Session {
@@ -597,68 +637,4 @@ func createTestSession(poolID uuid.UUID, status sessions.SessionStatus) *session
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
-}
-
-func TestEnsureDefaultPool(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{
-		DisableForeignKeyConstraintWhenMigrating: true,
-	})
-	require.NoError(t, err)
-
-	store := workpool.NewStore(db)
-
-	err = db.Exec(`
-		CREATE TABLE work_pools (
-			id TEXT PRIMARY KEY,
-			name TEXT UNIQUE NOT NULL,
-			description TEXT,
-			provider TEXT NOT NULL,
-			min_size INTEGER NOT NULL DEFAULT 0,
-			max_concurrency INTEGER NOT NULL DEFAULT 10,
-			max_idle_time INTEGER NOT NULL DEFAULT 1800,
-			auto_scale BOOLEAN NOT NULL DEFAULT true,
-			paused BOOLEAN NOT NULL DEFAULT false,
-			default_priority INTEGER NOT NULL DEFAULT 0,
-			queue_strategy TEXT NOT NULL DEFAULT 'fifo',
-			default_env TEXT DEFAULT '{}',
-			default_image TEXT,
-			created_at DATETIME,
-			updated_at DATETIME
-		)
-	`).Error
-	require.NoError(t, err)
-
-	ctx := context.Background()
-
-	t.Run("creates new default pool when none exists", func(t *testing.T) {
-		pool, err := ensureDefaultPool(ctx, store, "docker")
-		require.NoError(t, err)
-		assert.Equal(t, "default-docker", pool.Name)
-		assert.Equal(t, workpool.ProviderDocker, pool.Provider)
-		assert.Equal(t, 10, pool.MaxConcurrency)
-		assert.True(t, pool.AutoScale)
-	})
-
-	t.Run("returns existing pool when it already exists", func(t *testing.T) {
-		pool1, err := ensureDefaultPool(ctx, store, "docker")
-		require.NoError(t, err)
-
-		pool2, err := ensureDefaultPool(ctx, store, "docker")
-		require.NoError(t, err)
-
-		assert.Equal(t, pool1.ID, pool2.ID)
-		assert.Equal(t, pool1.Name, pool2.Name)
-	})
-
-	t.Run("creates different pools for different providers", func(t *testing.T) {
-		dockerPool, err := ensureDefaultPool(ctx, store, "docker")
-		require.NoError(t, err)
-
-		aciPool, err := ensureDefaultPool(ctx, store, "azure_aci")
-		require.NoError(t, err)
-
-		assert.NotEqual(t, dockerPool.ID, aciPool.ID)
-		assert.Equal(t, "default-docker", dockerPool.Name)
-		assert.Equal(t, "default-azure_aci", aciPool.Name)
-	})
 }

@@ -25,4 +25,3 @@ exec ./worker \
   --provider "${BROWSERGRID_WORKER_PROVIDER:-docker}" \
   --concurrency "${BROWSERGRID_WORKER_CONCURRENCY:-2}" \
   --db "$DB_URL" \
-  --poll-interval "${BROWSERGRID_WORKER_POLL_INTERVAL:-10s}" 

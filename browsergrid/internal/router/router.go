@@ -1,61 +1,117 @@
 package router
 
 import (
-	"time"
+	"context"
+	"fmt"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-
-	"github.com/autocrawlerHQ/browsergrid/internal/db"
-	"github.com/autocrawlerHQ/browsergrid/internal/poolmgr"
-	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
-	"github.com/autocrawlerHQ/browsergrid/internal/workpool"
-
+	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
+
+	"github.com/autocrawlerHQ/browsergrid/internal/db"
+	"github.com/autocrawlerHQ/browsergrid/internal/deployments"
+	"github.com/autocrawlerHQ/browsergrid/internal/poolmgr"
+	"github.com/autocrawlerHQ/browsergrid/internal/profiles"
+	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
+	"github.com/autocrawlerHQ/browsergrid/internal/workpool"
 )
 
-func New(db *db.DB, reconciler *poolmgr.Reconciler) *gin.Engine {
-	r := gin.New()
+func New(database *db.DB, reconciler *poolmgr.Reconciler, taskClient *asynq.Client, redisOpt asynq.RedisClientOpt) *gin.Engine {
+	r := gin.Default()
 
-	r.Use(gin.Logger(), gin.Recovery())
-
-	config := cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000", "http://localhost:5173", "http://localhost:8080"},
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"*"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Length", "Content-Type", "Authorization", "X-Requested-With"},
+		AllowHeaders:     []string{"Origin", "Content-Length", "Content-Type", "Authorization", "X-API-Key"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
-		MaxAge:           12 * time.Hour,
-	}
-	r.Use(cors.New(config))
+	}))
 
-	// Apply auth middleware after CORS
-	//r.Use(middleware.Auth())
-
-	// HealthCheck checks if the API is running
-	// @Summary Health check
-	// @Description Check if the API service is running and healthy
-	// @Tags health
-	// @Accept json
-	// @Produce json
-	// @Success 200 {object} map[string]string
-	// @Router /health [get]
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
+		sqlDB, _ := database.DB.DB()
+		if err := sqlDB.Ping(); err != nil {
+			c.JSON(503, gin.H{"status": "unhealthy", "database": "down", "error": err.Error()})
+			return
+		}
+
+		inspector := asynq.NewInspector(redisOpt)
+		if _, err := inspector.Queues(); err != nil {
+			c.JSON(503, gin.H{"status": "unhealthy", "redis": "down", "error": err.Error()})
+			return
+		}
+
+		c.JSON(200, gin.H{
+			"status":   "healthy",
+			"database": "up",
+			"redis":    "up",
+		})
 	})
 
-	// Swagger documentation
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	v1 := r.Group("/api/v1")
+	{
+		poolAdapter := workpool.NewAdapter(database.DB)
 
-	poolService := workpool.NewPoolService(db.DB)
-	sessions.RegisterRoutes(v1, db.DB, poolService)
+		// Initialize profiles
+		profileStore := profiles.NewStore(database.DB)
+		localProfileStore, err := profiles.NewLocalProfileStore("")
+		if err != nil {
+			panic("failed to initialize profile store: " + err.Error())
+		}
 
-	workpool.RegisterRoutes(v1, db.DB)
+		// Create profile service adapter
+		profileService := &profileServiceAdapter{
+			store: profileStore,
+		}
 
-	poolmgr.RegisterRoutes(v1, reconciler)
+		sessionDeps := sessions.Dependencies{
+			DB:           database.DB,
+			PoolSvc:      poolAdapter,
+			TaskClient:   taskClient,
+			ProfileSvc:   profileService,
+			ProfileStore: profileStore,
+		}
+		sessions.RegisterRoutes(v1, sessionDeps)
+
+		profileDeps := profiles.Dependencies{
+			DB:           database.DB,
+			Store:        profileStore,
+			ProfileStore: localProfileStore,
+		}
+		profiles.RegisterRoutes(v1, profileDeps)
+
+		workpool.RegisterRoutes(v1, database.DB)
+
+		deploymentDeps := deployments.Dependencies{
+			DB:         database.DB,
+			TaskClient: taskClient,
+		}
+		deployments.RegisterRoutes(v1, deploymentDeps)
+
+		poolmgr.RegisterRoutes(v1, reconciler)
+	}
 
 	return r
+}
+
+// profileServiceAdapter adapts the profiles store to the sessions ProfileService interface
+type profileServiceAdapter struct {
+	store *profiles.Store
+}
+
+func (p *profileServiceAdapter) ValidateProfile(ctx context.Context, profileID uuid.UUID, browser sessions.Browser) error {
+	profile, err := p.store.GetProfile(ctx, profileID)
+	if err != nil {
+		return err
+	}
+
+	if profile.Browser != browser {
+		return fmt.Errorf("profile browser type %s does not match session browser type %s", profile.Browser, browser)
+	}
+
+	return nil
 }

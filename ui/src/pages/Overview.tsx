@@ -1,14 +1,33 @@
 import React from 'react';
-import { Globe, Layers, Pickaxe, Activity } from 'lucide-react';
+import { Globe, Layers, Activity, Package } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useGetApiV1Sessions } from '@/lib/api/sessions/sessions';
 import { useGetApiV1Workpools } from '@/lib/api/workpools/workpools';
-import { useGetApiV1Workers } from '@/lib/api/workers/workers';
+import { useGetApiV1Deployments } from '@/lib/api/deployments/deployments';
+import { useQuery } from '@tanstack/react-query';
 
 export default function Overview() {
   const { data: sessions } = useGetApiV1Sessions();
   const { data: workpools } = useGetApiV1Workpools();
-  const { data: workers } = useGetApiV1Workers();
+  const { data: deployments } = useGetApiV1Deployments();
+  
+  // Fetch queue data from Asynqmon
+  const { data: queuesData } = useQuery({
+    queryKey: ['overview-queues'],
+    queryFn: async () => {
+      try {
+        const response = await fetch('http://localhost:4444/api/queues');
+        if (!response.ok) return null;
+        return response.json();
+      } catch {
+        return null;
+      }
+    },
+    refetchInterval: 5000,
+  });
+
+  const totalTasks = queuesData?.queues?.reduce((acc: number, q: any) => acc + q.size, 0) || 0;
+  const totalProcessed = queuesData?.queues?.reduce((acc: number, q: any) => acc + q.processed, 0) || 0;
 
   const stats = [
     {
@@ -26,19 +45,20 @@ export default function Overview() {
       color: 'text-green-600'
     },
     {
-      title: 'Online Workers',
-      value: workers?.workers?.filter((w: any) => !w.paused).length || 0,
-      total: workers?.total || 0,
-      icon: Pickaxe,
-      color: 'text-purple-600'
+      title: 'Deployments',
+      value: deployments?.deployments?.filter((d: any) => d.status === 'active').length || 0,
+      total: deployments?.total || 0,
+      icon: Package,
+      color: 'text-orange-600'
     },
     {
-      title: 'Total Capacity',
-      value: workers?.workers?.reduce((acc: number, w: any) => acc + (w.max_slots || 0), 0) || 0,
-      total: workers?.workers?.reduce((acc: number, w: any) => acc + (w.active || 0), 0) || 0,
+      title: 'Queued Tasks',
+      value: totalTasks,
+      total: totalProcessed,
       icon: Activity,
-      color: 'text-orange-600'
-    }
+      color: 'text-purple-600',
+      subtitle: 'processed total'
+    },
   ];
 
   return (
@@ -60,7 +80,7 @@ export default function Overview() {
             <CardContent>
               <div className="text-2xl font-bold">{stat.value}</div>
               <p className="text-xs text-muted-foreground">
-                of {stat.total} total
+                {stat.subtitle ? stat.subtitle : `of ${stat.total} total`}
               </p>
             </CardContent>
           </Card>
@@ -68,4 +88,4 @@ export default function Overview() {
       </div>
     </div>
   );
-} 
+}

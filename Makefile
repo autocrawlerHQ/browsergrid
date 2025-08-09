@@ -148,9 +148,10 @@ build:
 		echo "Building development containers with Air..."; \
 		$(DOCKER_COMPOSE_COMMAND) $(FILES) build; \
 	elif [ "$(ENVIRONMENT)" = "browser" ]; then \
-		echo "Building $(BROWSER) browser image..."; \
-		$(DOCKER_COMPOSE_COMMAND) $(FILES) build base; \
-		$(DOCKER_COMPOSE_COMMAND) $(FILES) build; \
+    	echo "Building browser base image..."; \
+    	$(DOCKER_COMPOSE_COMMAND) $(FILES) build base; \
+    	echo "Building $(BROWSER) image..."; \
+    	$(DOCKER_COMPOSE_COMMAND) $(FILES) build browser; \
 	else \
 		echo "Error: Unknown environment '$(ENVIRONMENT)'"; \
 		echo "Run 'make help' for usage information."; \
@@ -168,7 +169,6 @@ up:
 	elif [ "$(ENVIRONMENT)" = "browser" ]; then \
 		echo "Starting services with $(BROWSER) browser..."; \
 		$(DOCKER_COMPOSE_COMMAND) $(FILES) up -d browser; \
-		$(DOCKER_COMPOSE_COMMAND) $(FILES) up -d browsermux; \
 	else \
 		echo "Error: Unknown environment '$(ENVIRONMENT)'"; \
 		echo "Run 'make help' for usage information."; \
@@ -291,7 +291,7 @@ migrate:
 		echo "Error: DATABASE_URL environment variable is required"; \
 		exit 1; \
 	fi
-	@atlas migrate apply --dir file://browsergrid/migrations --url "$(DATABASE_URL)" --verbose
+	@atlas migrate apply --dir file://browsergrid/migrations --url "$(DATABASE_URL)"
 
 # Show migration status
 migrate-status:

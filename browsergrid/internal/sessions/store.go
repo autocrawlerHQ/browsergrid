@@ -13,6 +13,10 @@ type Store struct{ db *gorm.DB }
 
 func NewStore(db *gorm.DB) *Store { return &Store{db: db} }
 
+func (s *Store) GetDB() *gorm.DB {
+	return s.db
+}
+
 func (s *Store) CreateSession(ctx context.Context, sess *Session) error {
 	if sess.ID == uuid.Nil {
 		sess.ID = uuid.New()

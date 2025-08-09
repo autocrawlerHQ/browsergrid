@@ -10,7 +10,7 @@ type Config struct {
 	Port string `json:"port"`
 
 	BrowserURL               string `json:"browser_url"`
-	VNCURL                   string `json:"vnc_url"`
+	FrontendURL              string `json:"frontend_url"`
 	MaxMessageSize           int    `json:"max_message_size"`
 	ConnectionTimeoutSeconds int    `json:"connection_timeout_seconds"`
 }
@@ -39,13 +39,13 @@ func Load() (*Config, error) {
 	if browserURL := os.Getenv("BROWSER_URL"); browserURL != "" {
 		config.BrowserURL = browserURL
 	} else {
-		config.BrowserURL = "http://localhost:9222"
+		config.BrowserURL = "http://localhost:6100"
 	}
 
-	if vncURL := os.Getenv("VNC_URL"); vncURL != "" {
-		config.VNCURL = vncURL
+	if frontendURL := os.Getenv("FRONTEND_URL"); frontendURL != "" {
+		config.FrontendURL = frontendURL
 	} else {
-		config.VNCURL = "http://browser:6080"
+		config.FrontendURL = "http://localhost:80"
 	}
 
 	if maxSize := os.Getenv("MAX_MESSAGE_SIZE"); maxSize != "" {
@@ -75,7 +75,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		Port:                     "8080",
 		BrowserURL:               "http://localhost:9222",
-		VNCURL:                   "http://browser:6080",
+		FrontendURL:              "http://localhost:80",
 		MaxMessageSize:           1024 * 1024,
 		ConnectionTimeoutSeconds: 10,
 	}

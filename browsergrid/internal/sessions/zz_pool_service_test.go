@@ -10,9 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Test implementations of PoolService for testing
-
-// successPoolService always returns a successful pool ID
 type successPoolService struct {
 	poolID uuid.UUID
 }
@@ -24,7 +21,6 @@ func (s *successPoolService) GetOrCreateDefault(ctx context.Context, provider st
 	return s.poolID, nil
 }
 
-// errorPoolService always returns an error
 type errorPoolService struct {
 	err error
 }
@@ -36,7 +32,6 @@ func (e *errorPoolService) GetOrCreateDefault(ctx context.Context, provider stri
 	return uuid.Nil, e.err
 }
 
-// trackingPoolService tracks calls made to it
 type trackingPoolService struct {
 	calls []struct {
 		ctx      context.Context
@@ -110,7 +105,6 @@ func TestAssignToDefaultWorkPool_ProviderPassing(t *testing.T) {
 			err := assignToDefaultWorkPool(ctx, poolService, session)
 			require.NoError(t, err)
 
-			// Find the call for this provider
 			var foundCall bool
 			for _, call := range poolService.calls {
 				if call.provider == tt.provider {
@@ -125,7 +119,6 @@ func TestAssignToDefaultWorkPool_ProviderPassing(t *testing.T) {
 }
 
 func TestAssignToDefaultWorkPool_ContextPropagation(t *testing.T) {
-	// Create a context with a value to test propagation
 	type contextKey string
 	key := contextKey("test-key")
 	value := "test-value"
@@ -137,7 +130,6 @@ func TestAssignToDefaultWorkPool_ContextPropagation(t *testing.T) {
 	err := assignToDefaultWorkPool(ctx, poolService, session)
 	require.NoError(t, err)
 
-	// Verify context was propagated
 	require.Len(t, poolService.calls, 1)
 	receivedValue := poolService.calls[0].ctx.Value(key)
 	assert.Equal(t, value, receivedValue, "Context should be propagated to pool service")
@@ -156,21 +148,18 @@ func TestAssignToDefaultWorkPool_AlreadyAssigned(t *testing.T) {
 	err := assignToDefaultWorkPool(ctx, poolService, session)
 	require.NoError(t, err)
 
-	// Pool service should still be called and should update the WorkPoolID
 	assert.Len(t, poolService.calls, 1)
 	assert.Equal(t, poolService.poolID, *session.WorkPoolID)
 	assert.NotEqual(t, existingPoolID, *session.WorkPoolID, "WorkPoolID should be updated")
 }
 
 func TestPoolServiceInterface_Compliance(t *testing.T) {
-	// Test that our test implementations comply with the interface
 	var _ PoolService = &successPoolService{}
 	var _ PoolService = &errorPoolService{}
 	var _ PoolService = &trackingPoolService{}
 	var _ PoolService = &mockPoolService{}
 }
 
-// Benchmark the assign function
 func BenchmarkAssignToDefaultWorkPool(b *testing.B) {
 	ctx := context.Background()
 	poolService := &successPoolService{}

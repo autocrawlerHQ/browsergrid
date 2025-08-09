@@ -49,11 +49,9 @@ func TestDockerProviderContract(t *testing.T) {
 
 	t.Run("InterfaceCompliance", func(t *testing.T) {
 		provisioner := &DockerProvisioner{
-			cli:             nil,
-			imageBrowserMux: "browsergrid/browsermux:latest",
-			defaultPortDev:  9222,
-			defaultPortMux:  8080,
-			healthTimeout:   10 * time.Second,
+			cli:           nil,
+			defaultPort:   80,
+			healthTimeout: 10 * time.Second,
 		}
 
 		assert.Equal(t, workpool.ProviderDocker, provisioner.GetType(), "GetType should return Docker provider type")
@@ -69,9 +67,7 @@ func TestDockerProviderContract(t *testing.T) {
 		})
 
 		t.Run("StructFields", func(t *testing.T) {
-			assert.Equal(t, "browsergrid/browsermux:latest", provisioner.imageBrowserMux)
-			assert.Equal(t, 9222, provisioner.defaultPortDev)
-			assert.Equal(t, 8080, provisioner.defaultPortMux)
+			assert.Equal(t, 80, provisioner.defaultPort)
 			assert.Equal(t, 10*time.Second, provisioner.healthTimeout)
 		})
 	})
@@ -104,9 +100,7 @@ func TestDockerProvisionerCreation(t *testing.T) {
 			provisioner := NewDockerProvisioner()
 			if provisioner != nil {
 				assert.Equal(t, workpool.ProviderDocker, provisioner.GetType())
-				assert.Equal(t, "browsergrid/browsermux:latest", provisioner.imageBrowserMux)
-				assert.Equal(t, 9222, provisioner.defaultPortDev)
-				assert.Equal(t, 8080, provisioner.defaultPortMux)
+				assert.Equal(t, 80, provisioner.defaultPort)
 				assert.Equal(t, 10*time.Second, provisioner.healthTimeout)
 			}
 		}, "NewDockerProvisioner creation should be tested")

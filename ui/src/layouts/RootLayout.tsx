@@ -11,8 +11,11 @@ import {
   LayoutGrid, 
   Globe, 
   Layers, 
-  Pickaxe, 
-  Webhook 
+  ListTodo, 
+  //Clock,
+  Webhook,
+  User,
+  Package
 } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -21,8 +24,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 const tabItems = [
   { id: 'overview', label: 'Overview', icon: LayoutGrid, path: '/' },
   { id: 'sessions', label: 'Browser Sessions', icon: Globe, path: '/sessions' },
+  { id: 'profiles', label: 'Profiles', icon: User, path: '/profiles' },
   { id: 'workpools', label: 'Work Pools', icon: Layers, path: '/workpools' },
-  { id: 'workers', label: 'Workers', icon: Pickaxe, path: '/workers' },
+  { id: 'deployments', label: 'Deployments', icon: Package, path: '/deployments' },
+  { id: 'queue', label: 'Queue', icon: ListTodo, path: '/queue' },
+  //{ id: 'scheduled-tasks', label: 'Scheduled Tasks', icon: Clock, path: '/scheduled-tasks' },
   { id: 'webhooks', label: 'Webhooks', icon: Webhook, path: '/webhooks' }
 ]
 
@@ -108,4 +114,4 @@ export default function RootLayout() {
       </div>
     </QueryClientProvider>
   )
-} 
+}

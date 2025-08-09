@@ -1,4 +1,4 @@
-basePath: /api/v1
+basePath: /
 definitions:
   Browser:
     description: Supported browser types
@@ -30,6 +30,21 @@ definitions:
     - VerStable
     - VerCanary
     - VerDev
+  DeploymentStatus:
+    description: Current status of a deployment
+    enum:
+    - active
+    - inactive
+    - deploying
+    - failed
+    - deprecated
+    type: string
+    x-enum-varnames:
+    - StatusActive
+    - StatusInactive
+    - StatusDeploying
+    - StatusFailed
+    - StatusDeprecated
   ErrorResponse:
     description: Error response with details
     properties:
@@ -92,6 +107,30 @@ definitions:
         example: 30
         type: integer
     type: object
+  RunStatus:
+    description: Current status of a deployment run
+    enum:
+    - pending
+    - running
+    - completed
+    - failed
+    - cancelled
+    type: string
+    x-enum-varnames:
+    - RunStatusPending
+    - RunStatusRunning
+    - RunStatusCompleted
+    - RunStatusFailed
+    - RunStatusCancelled
+  Runtime:
+    description: Supported deployment runtimes
+    enum:
+    - node
+    - python
+    type: string
+    x-enum-varnames:
+    - RuntimeNode
+    - RuntimePython
   ScalingRequest:
     description: Scaling parameters for updating work pool configuration
     properties:
@@ -184,7 +223,7 @@ definitions:
         example: false
         type: boolean
       live_url:
-        example: http://localhost:7900
+        example: http://localhost:80
         type: string
       operating_system:
         allOf:
@@ -192,6 +231,9 @@ definitions:
         example: linux
       pool_id:
         example: chrome-pool
+        type: string
+      profile_id:
+        example: 550e8400-e29b-41d4-a716-446655440001
         type: string
       provider:
         example: local
@@ -219,11 +261,8 @@ definitions:
       work_pool_id:
         example: 550e8400-e29b-41d4-a716-446655440002
         type: string
-      worker_id:
-        example: 550e8400-e29b-41d4-a716-446655440001
-        type: string
       ws_endpoint:
-        example: ws://localhost:9222/devtools/browser
+        example: ws://localhost:80/devtools/browser
         type: string
     type: object
   SessionEvent:
@@ -455,136 +494,340 @@ definitions:
         example: 5
         type: integer
     type: object
-  Worker:
-    description: Worker instance that handles browser sessions
+  internal_deployments.BrowserRequest:
+    description: Browser session configuration for deployment
     properties:
-      active:
-        example: 0
-        type: integer
-      hostname:
-        example: browsergrid-worker-1
+      browser:
         type: string
-      id:
-        example: 550e8400-e29b-41d4-a716-446655440001
-        type: string
-      last_beat:
-        example: "2023-01-01T00:00:00Z"
-        type: string
-      max_slots:
-        example: 1
-        type: integer
-      name:
-        example: worker-chrome-001
-        type: string
-      paused:
-        example: false
+      environment:
+        additionalProperties:
+          type: string
+        type: object
+      headless:
         type: boolean
-      pool_id:
-        example: 550e8400-e29b-41d4-a716-446655440000
+      operating_system:
         type: string
-      provider:
-        allOf:
-        - $ref: '#/definitions/ProviderType'
-        example: docker
-      started_at:
-        example: "2023-01-01T00:00:00Z"
+      profile_id:
+        type: string
+      screen:
+        additionalProperties: true
+        type: object
+      version:
         type: string
     type: object
-  WorkerHeartbeatRequest:
-    description: Heartbeat data with active session count
+  internal_deployments.CreateDeploymentRequest:
     properties:
-      active:
-        example: 2
-        minimum: 0
-        type: integer
+      config:
+        $ref: '#/definitions/internal_deployments.DeploymentConfig'
+      description:
+        type: string
+      name:
+        type: string
+      package_hash:
+        type: string
+      package_url:
+        type: string
+      runtime:
+        $ref: '#/definitions/Runtime'
+      version:
+        type: string
+    required:
+    - name
+    - package_hash
+    - package_url
+    - runtime
+    - version
     type: object
-  WorkerListResponse:
-    description: Response containing a list of workers
+  internal_deployments.CreateDeploymentRunRequest:
     properties:
-      total:
-        example: 10
-        type: integer
-      workers:
+      config:
+        additionalProperties: true
+        type: object
+      environment:
+        additionalProperties:
+          type: string
+        type: object
+    type: object
+  internal_deployments.Deployment:
+    description: Deployment package with configuration and metadata
+    properties:
+      config:
         items:
-          $ref: '#/definitions/Worker'
+          type: integer
+        type: array
+      created_at:
+        type: string
+      description:
+        type: string
+      failed_runs:
+        type: integer
+      id:
+        type: string
+      last_run_at:
+        type: string
+      name:
+        type: string
+      package_hash:
+        type: string
+      package_url:
+        type: string
+      runs:
+        description: Relationships
+        items:
+          $ref: '#/definitions/internal_deployments.DeploymentRun'
+        type: array
+      runtime:
+        $ref: '#/definitions/Runtime'
+      status:
+        $ref: '#/definitions/DeploymentStatus'
+      successful_runs:
+        type: integer
+      total_runs:
+        description: Computed fields
+        type: integer
+      updated_at:
+        type: string
+      version:
+        type: string
+    type: object
+  internal_deployments.DeploymentConfig:
+    description: Deployment configuration settings
+    properties:
+      browser_requests:
+        items:
+          $ref: '#/definitions/internal_deployments.BrowserRequest'
+        type: array
+      concurrency:
+        type: integer
+      environment:
+        additionalProperties:
+          type: string
+        type: object
+      max_retries:
+        type: integer
+      resource_limits:
+        additionalProperties: true
+        type: object
+      schedule:
+        type: string
+      timeout_seconds:
+        type: integer
+      trigger_events:
+        items:
+          type: string
         type: array
     type: object
-  WorkerPauseRequest:
-    description: Pause configuration for a worker
+  internal_deployments.DeploymentListResponse:
     properties:
-      paused:
-        example: true
-        type: boolean
+      deployments:
+        items:
+          $ref: '#/definitions/internal_deployments.Deployment'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  internal_deployments.DeploymentRun:
+    description: Deployment run with execution details and results
+    properties:
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      deployment:
+        allOf:
+        - $ref: '#/definitions/internal_deployments.Deployment'
+        description: Relationships
+      deployment_id:
+        type: string
+      duration_seconds:
+        description: Computed fields
+        type: integer
+      error:
+        type: string
+      id:
+        type: string
+      output:
+        items:
+          type: integer
+        type: array
+      session_id:
+        type: string
+      started_at:
+        type: string
+      status:
+        $ref: '#/definitions/RunStatus'
+      updated_at:
+        type: string
+    type: object
+  internal_deployments.DeploymentRunListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      runs:
+        items:
+          $ref: '#/definitions/internal_deployments.DeploymentRun'
+        type: array
+      total:
+        type: integer
+    type: object
+  internal_deployments.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  internal_deployments.MessageResponse:
+    properties:
+      message:
+        type: string
+    type: object
+  internal_deployments.UpdateDeploymentRequest:
+    properties:
+      config:
+        $ref: '#/definitions/internal_deployments.DeploymentConfig'
+      description:
+        type: string
+      status:
+        $ref: '#/definitions/DeploymentStatus'
+    type: object
+  internal_profiles.CreateProfileRequest:
+    properties:
+      browser:
+        allOf:
+        - $ref: '#/definitions/Browser'
+        enum:
+        - chrome
+        - chromium
+        - firefox
+        - edge
+        - webkit
+        - safari
+      description:
+        maxLength: 1000
+        type: string
+      name:
+        maxLength: 255
+        minLength: 1
+        type: string
+    required:
+    - browser
+    - name
+    type: object
+  internal_profiles.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  internal_profiles.MessageResponse:
+    properties:
+      message:
+        type: string
+    type: object
+  internal_profiles.Profile:
+    properties:
+      active_sessions:
+        description: Computed fields
+        type: integer
+      browser:
+        $ref: '#/definitions/Browser'
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      last_used_at:
+        type: string
+      metadata:
+        items:
+          type: integer
+        type: array
+      name:
+        type: string
+      size_bytes:
+        type: integer
+      storage_backend:
+        $ref: '#/definitions/internal_profiles.StorageBackend'
+      total_sessions:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  internal_profiles.ProfileListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      profiles:
+        items:
+          $ref: '#/definitions/internal_profiles.Profile'
+        type: array
+      total:
+        type: integer
+    type: object
+  internal_profiles.StorageBackend:
+    enum:
+    - local
+    - s3
+    type: string
+    x-enum-varnames:
+    - StorageBackendLocal
+    - StorageBackendS3
+  internal_profiles.UpdateProfileRequest:
+    properties:
+      description:
+        maxLength: 1000
+        type: string
+      name:
+        maxLength: 255
+        minLength: 1
+        type: string
     type: object
 externalDocs:
   description: OpenAPI
   url: https://swagger.io/resources/open-api/
-host: localhost:8080
+host: localhost:8765
 info:
   contact:
     email: support@swagger.io
     name: API Support
     url: http://www.swagger.io/support
-  description: BrowserGrid is a distributed browser automation platform that provides
-    scalable browser sessions and worker pool management.
+  description: BrowserGrid is a distributed browser automation platform using task
+    queues for scalable browser session management.
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
   termsOfService: http://swagger.io/terms/
   title: BrowserGrid API
-  version: "1.0"
+  version: "2.0"
 paths:
-  /api/v1/sessions:
+  /api/v1/deployments:
     get:
       consumes:
       - application/json
-      description: Get a list of browser sessions with optional filtering by status
-        and time range
+      description: Get a list of all deployments with optional filtering
       parameters:
-      - description: Filter by session status
-        enum:
-        - pending
-        - starting
-        - available
-        - claimed
-        - running
-        - idle
-        - completed
-        - failed
-        - expired
-        - crashed
-        - timed_out
-        - terminated
-        - pending
-        - starting
-        - available
-        - claimed
-        - running
-        - idle
-        - completed
-        - failed
-        - expired
-        - crashed
-        - timed_out
-        - terminated
+      - description: Filter by deployment status
         in: query
         name: status
         type: string
-      - description: Filter sessions created after this time (RFC3339)
+      - description: Filter by runtime
         in: query
-        name: start_time
-        type: string
-      - description: Filter sessions created before this time (RFC3339)
-        in: query
-        name: end_time
+        name: runtime
         type: string
       - default: 0
-        description: Pagination offset
+        description: Number of deployments to skip
         in: query
         name: offset
         type: integer
-      - default: 100
-        description: Pagination limit
+      - default: 20
+        description: Maximum number of deployments to return
         in: query
         name: limit
         type: integer
@@ -592,52 +835,52 @@ paths:
       - application/json
       responses:
         "200":
-          description: List of sessions with pagination info
+          description: List of deployments
           schema:
-            $ref: '#/definitions/SessionListResponse'
+            $ref: '#/definitions/internal_deployments.DeploymentListResponse'
         "500":
-          description: Internal Server Error
+          description: Internal server error
           schema:
-            $ref: '#/definitions/ErrorResponse'
-      summary: List browser sessions
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: List deployments
       tags:
-      - sessions
+      - deployments
     post:
       consumes:
       - application/json
-      description: Create a new browser session with specified configuration
+      description: Create a new deployment package with specified configuration
       parameters:
-      - description: Session configuration
+      - description: Deployment configuration
         in: body
-        name: session
+        name: deployment
         required: true
         schema:
-          $ref: '#/definitions/Session'
+          $ref: '#/definitions/internal_deployments.CreateDeploymentRequest'
       produces:
       - application/json
       responses:
         "201":
-          description: Created
+          description: Deployment created successfully
           schema:
-            $ref: '#/definitions/Session'
+            $ref: '#/definitions/internal_deployments.Deployment'
         "400":
-          description: Bad Request
+          description: Invalid request data
           schema:
-            $ref: '#/definitions/ErrorResponse'
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
         "500":
-          description: Internal Server Error
+          description: Internal server error
           schema:
-            $ref: '#/definitions/ErrorResponse'
-      summary: Create a new browser session
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: Create a new deployment
       tags:
-      - sessions
-  /api/v1/sessions/{id}:
-    get:
+      - deployments
+  /api/v1/deployments/{id}:
+    delete:
       consumes:
       - application/json
-      description: Get details of a specific browser session by ID
+      description: Delete a deployment and all its runs
       parameters:
-      - description: Session ID (UUID)
+      - description: Deployment ID (UUID)
         in: path
         name: id
         required: true
@@ -646,31 +889,203 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Deployment deleted successfully
           schema:
-            $ref: '#/definitions/Session'
+            $ref: '#/definitions/internal_deployments.MessageResponse'
         "400":
-          description: Bad Request
+          description: Invalid deployment ID
           schema:
-            $ref: '#/definitions/ErrorResponse'
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
         "404":
-          description: Not Found
+          description: Deployment not found
           schema:
-            $ref: '#/definitions/ErrorResponse'
-      summary: Get a browser session
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: Delete a deployment
       tags:
-      - sessions
-  /api/v1/sessions/{id}/events:
+      - deployments
     get:
       consumes:
       - application/json
-      description: Get a list of session events with optional filtering by event type
-        and time range
+      description: Get detailed information about a specific deployment
       parameters:
-      - description: Session ID (UUID)
+      - description: Deployment ID (UUID)
         in: path
         name: id
         required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Deployment details
+          schema:
+            $ref: '#/definitions/internal_deployments.Deployment'
+        "400":
+          description: Invalid deployment ID
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+        "404":
+          description: Deployment not found
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: Get a deployment
+      tags:
+      - deployments
+    patch:
+      consumes:
+      - application/json
+      description: Update deployment metadata and configuration
+      parameters:
+      - description: Deployment ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Deployment updates
+        in: body
+        name: deployment
+        required: true
+        schema:
+          $ref: '#/definitions/internal_deployments.UpdateDeploymentRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Deployment updated successfully
+          schema:
+            $ref: '#/definitions/internal_deployments.Deployment'
+        "400":
+          description: Invalid request data
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+        "404":
+          description: Deployment not found
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: Update a deployment
+      tags:
+      - deployments
+  /api/v1/deployments/{id}/runs:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of runs for a specific deployment
+      parameters:
+      - description: Deployment ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Filter by run status
+        in: query
+        name: status
+        type: string
+      - default: 0
+        description: Number of runs to skip
+        in: query
+        name: offset
+        type: integer
+      - default: 20
+        description: Maximum number of runs to return
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of deployment runs
+          schema:
+            $ref: '#/definitions/internal_deployments.DeploymentRunListResponse'
+        "400":
+          description: Invalid deployment ID
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: List deployment runs
+      tags:
+      - deployments
+    post:
+      consumes:
+      - application/json
+      description: Trigger a manual run of a deployment
+      parameters:
+      - description: Deployment ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Deployment run configuration
+        in: body
+        name: run
+        required: true
+        schema:
+          $ref: '#/definitions/internal_deployments.CreateDeploymentRunRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Deployment run created successfully
+          schema:
+            $ref: '#/definitions/internal_deployments.DeploymentRun'
+        "400":
+          description: Invalid request data
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+        "404":
+          description: Deployment not found
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: Create a new deployment run
+      tags:
+      - deployments
+  /api/v1/deployments/{id}/stats:
+    get:
+      consumes:
+      - application/json
+      description: Get detailed statistics for a deployment
+      parameters:
+      - description: Deployment ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Deployment statistics
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid deployment ID
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+        "404":
+          description: Deployment not found
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: Get deployment statistics
+      tags:
+      - deployments
+  /api/v1/events:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of events for browser sessions with optional filtering
+        by session ID, event type, time range, and pagination
+      parameters:
+      - description: Session ID (UUID) - alternative to path parameter
+        in: query
+        name: session_id
         type: string
       - description: Filter by event type
         enum:
@@ -704,37 +1119,40 @@ paths:
         in: query
         name: event_type
         type: string
-      - description: Filter events created after this time (RFC3339)
+      - description: Filter events after this time (RFC3339 format)
         in: query
         name: start_time
         type: string
-      - description: Filter events created before this time (RFC3339)
+      - description: Filter events before this time (RFC3339 format)
         in: query
         name: end_time
         type: string
       - default: 0
-        description: Pagination offset
+        description: Number of events to skip
         in: query
+        minimum: 0
         name: offset
         type: integer
       - default: 100
-        description: Pagination limit
+        description: Maximum number of events to return
         in: query
+        maximum: 1000
+        minimum: 1
         name: limit
         type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: List of events with pagination info
+          description: List of events
           schema:
             $ref: '#/definitions/SessionEventListResponse'
         "400":
-          description: Bad Request
+          description: Invalid session ID or parameters
           schema:
             $ref: '#/definitions/ErrorResponse'
         "500":
-          description: Internal Server Error
+          description: Internal server error
           schema:
             $ref: '#/definitions/ErrorResponse'
       summary: List session events
@@ -743,14 +1161,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: Create a new event for a session (e.g., page navigation, user interaction)
+      description: Create a new event for a browser session. The session ID can be
+        provided in the URL path or in the request body.
       parameters:
-      - description: Session ID (UUID)
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Session event data
+      - description: Event data
         in: body
         name: event
         required: true
@@ -760,33 +1174,28 @@ paths:
       - application/json
       responses:
         "201":
-          description: Created
+          description: Event created successfully
           schema:
             $ref: '#/definitions/SessionEvent'
         "400":
-          description: Bad Request
+          description: Invalid request data or missing session_id/event
           schema:
             $ref: '#/definitions/ErrorResponse'
         "500":
-          description: Internal Server Error
+          description: Internal server error
           schema:
             $ref: '#/definitions/ErrorResponse'
       summary: Create a session event
       tags:
       - events
-  /api/v1/sessions/{id}/metrics:
+  /api/v1/metrics:
     post:
       consumes:
       - application/json
-      description: Create performance metrics for a session (CPU, memory, network
-        usage)
+      description: Create performance metrics for a browser session. The session ID
+        can be provided in the URL path or in the request body.
       parameters:
-      - description: Session ID (UUID)
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Session metrics data
+      - description: Performance metrics data
         in: body
         name: metrics
         required: true
@@ -796,55 +1205,101 @@ paths:
       - application/json
       responses:
         "201":
-          description: Created
+          description: Metrics created successfully
           schema:
             $ref: '#/definitions/SessionMetrics'
         "400":
-          description: Bad Request
+          description: Invalid request data or missing session_id
           schema:
             $ref: '#/definitions/ErrorResponse'
         "500":
-          description: Internal Server Error
+          description: Internal server error
           schema:
             $ref: '#/definitions/ErrorResponse'
       summary: Create session metrics
       tags:
       - metrics
-  /api/v1/workers:
+  /api/v1/profiles:
     get:
       consumes:
       - application/json
-      description: Get a list of all workers with optional filtering
+      description: Get a paginated list of browser profiles
       parameters:
-      - description: Filter by work pool ID (UUID)
+      - description: Filter by browser type
+        enum:
+        - chrome
+        - chromium
+        - firefox
+        - edge
+        - webkit
+        - safari
         in: query
-        name: pool_id
+        name: browser
         type: string
-      - description: Filter by online status
+      - default: 0
+        description: Number of profiles to skip
         in: query
-        name: online
-        type: boolean
+        minimum: 0
+        name: offset
+        type: integer
+      - default: 20
+        description: Maximum number of profiles to return
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: List of workers
+          description: List of profiles
           schema:
-            $ref: '#/definitions/WorkerListResponse'
+            $ref: '#/definitions/internal_profiles.ProfileListResponse'
         "500":
-          description: Internal Server Error
+          description: Internal server error
           schema:
-            $ref: '#/definitions/ErrorResponse'
-      summary: List workers
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+      summary: List profiles
       tags:
-      - workers
-  /api/v1/workers/{id}:
+      - profiles
+    post:
+      consumes:
+      - application/json
+      description: Create a new browser profile for saving and reusing browser state
+      parameters:
+      - description: Profile configuration
+        in: body
+        name: profile
+        required: true
+        schema:
+          $ref: '#/definitions/internal_profiles.CreateProfileRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Profile created successfully
+          schema:
+            $ref: '#/definitions/internal_profiles.Profile'
+        "400":
+          description: Invalid request data
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+      summary: Create a new profile
+      tags:
+      - profiles
+  /api/v1/profiles/{id}:
     delete:
       consumes:
       - application/json
-      description: Delete a worker from the pool
+      description: Delete a profile and its associated data. Cannot delete profiles
+        with active sessions.
       parameters:
-      - description: Worker ID (UUID)
+      - description: Profile ID (UUID)
         in: path
         name: id
         required: true
@@ -853,26 +1308,30 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Profile deleted successfully
           schema:
-            $ref: '#/definitions/MessageResponse'
+            $ref: '#/definitions/internal_profiles.MessageResponse'
         "400":
-          description: Bad Request
+          description: Invalid profile ID or profile has active sessions
           schema:
-            $ref: '#/definitions/ErrorResponse'
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+        "404":
+          description: Profile not found
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
         "500":
-          description: Internal Server Error
+          description: Internal server error
           schema:
-            $ref: '#/definitions/ErrorResponse'
-      summary: Delete a worker
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+      summary: Delete a profile
       tags:
-      - workers
+      - profiles
     get:
       consumes:
       - application/json
-      description: Get details of a specific worker by ID
+      description: Get detailed information about a specific profile
       parameters:
-      - description: Worker ID (UUID)
+      - description: Profile ID (UUID)
         in: path
         name: id
         required: true
@@ -881,94 +1340,572 @@ paths:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Profile details
           schema:
-            $ref: '#/definitions/Worker'
+            $ref: '#/definitions/internal_profiles.Profile'
         "400":
-          description: Bad Request
+          description: Invalid profile ID
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+        "404":
+          description: Profile not found
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+      summary: Get a profile
+      tags:
+      - profiles
+    patch:
+      consumes:
+      - application/json
+      description: Update profile metadata (name, description)
+      parameters:
+      - description: Profile ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: updates
+        required: true
+        schema:
+          $ref: '#/definitions/internal_profiles.UpdateProfileRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated profile
+          schema:
+            $ref: '#/definitions/internal_profiles.Profile'
+        "400":
+          description: Invalid request
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+        "404":
+          description: Profile not found
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+      summary: Update a profile
+      tags:
+      - profiles
+  /api/v1/profiles/{id}/export:
+    get:
+      consumes:
+      - application/json
+      description: Export a browser profile as a ZIP archive
+      parameters:
+      - description: Profile ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/zip
+      responses:
+        "200":
+          description: Profile ZIP archive
+          schema:
+            type: file
+        "400":
+          description: Invalid profile ID
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+        "404":
+          description: Profile not found
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+      summary: Export a profile
+      tags:
+      - profiles
+  /api/v1/profiles/import:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Import a browser profile from a ZIP archive
+      parameters:
+      - description: Profile ZIP archive
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: Profile name
+        in: formData
+        name: name
+        required: true
+        type: string
+      - description: Profile description
+        in: formData
+        name: description
+        type: string
+      - description: Browser type
+        enum:
+        - chrome
+        - chromium
+        - firefox
+        - edge
+        - webkit
+        - safari
+        in: formData
+        name: browser
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Profile imported successfully
+          schema:
+            $ref: '#/definitions/internal_profiles.Profile'
+        "400":
+          description: Invalid request or file
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/internal_profiles.ErrorResponse'
+      summary: Import a profile
+      tags:
+      - profiles
+  /api/v1/runs:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of all deployment runs across all deployments
+      parameters:
+      - description: Filter by run status
+        in: query
+        name: status
+        type: string
+      - default: 0
+        description: Number of runs to skip
+        in: query
+        name: offset
+        type: integer
+      - default: 20
+        description: Maximum number of runs to return
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of deployment runs
+          schema:
+            $ref: '#/definitions/internal_deployments.DeploymentRunListResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: List all deployment runs
+      tags:
+      - deployments
+  /api/v1/runs/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a deployment run
+      parameters:
+      - description: Run ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Run deleted successfully
+          schema:
+            $ref: '#/definitions/internal_deployments.MessageResponse'
+        "400":
+          description: Invalid run ID
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+        "404":
+          description: Run not found
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: Delete a deployment run
+      tags:
+      - deployments
+    get:
+      consumes:
+      - application/json
+      description: Get detailed information about a specific deployment run
+      parameters:
+      - description: Run ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Deployment run details
+          schema:
+            $ref: '#/definitions/internal_deployments.DeploymentRun'
+        "400":
+          description: Invalid run ID
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+        "404":
+          description: Run not found
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: Get a deployment run
+      tags:
+      - deployments
+  /api/v1/runs/{id}/logs:
+    get:
+      consumes:
+      - application/json
+      description: Get logs for a specific deployment run
+      parameters:
+      - description: Run ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Deployment run logs
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid run ID
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+        "404":
+          description: Run not found
+          schema:
+            $ref: '#/definitions/internal_deployments.ErrorResponse'
+      summary: Get deployment run logs
+      tags:
+      - deployments
+  /api/v1/sessions:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of browser sessions with optional filtering by status,
+        time range, and pagination
+      parameters:
+      - description: Filter by session status
+        enum:
+        - pending
+        - starting
+        - available
+        - claimed
+        - running
+        - idle
+        - completed
+        - failed
+        - expired
+        - crashed
+        - timed_out
+        - terminated
+        in: query
+        name: status
+        type: string
+      - description: Filter sessions created after this time (RFC3339 format)
+        in: query
+        name: start_time
+        type: string
+      - description: Filter sessions created before this time (RFC3339 format)
+        in: query
+        name: end_time
+        type: string
+      - default: 0
+        description: Number of sessions to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - default: 100
+        description: Maximum number of sessions to return
+        in: query
+        maximum: 1000
+        minimum: 1
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of sessions
+          schema:
+            $ref: '#/definitions/SessionListResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: List browser sessions
+      tags:
+      - sessions
+    post:
+      consumes:
+      - application/json
+      description: Create a new browser session with specified configuration. The
+        session will be created in pending status and a start task will be enqueued.
+      parameters:
+      - description: Session configuration
+        in: body
+        name: session
+        required: true
+        schema:
+          $ref: '#/definitions/Session'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Session created successfully
+          schema:
+            $ref: '#/definitions/Session'
+        "400":
+          description: Invalid request data
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Create a new browser session
+      tags:
+      - sessions
+  /api/v1/sessions/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Stop and terminate a running browser session. If the session is
+        already in a terminal state, it will return success immediately.
+      parameters:
+      - description: Session ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Session termination initiated or already terminated
+          schema:
+            $ref: '#/definitions/MessageResponse'
+        "400":
+          description: Invalid session ID
           schema:
             $ref: '#/definitions/ErrorResponse'
         "404":
-          description: Not Found
+          description: Session not found
           schema:
             $ref: '#/definitions/ErrorResponse'
         "500":
-          description: Internal Server Error
+          description: Internal server error
           schema:
             $ref: '#/definitions/ErrorResponse'
-      summary: Get a worker
+      summary: Delete a browser session
       tags:
-      - workers
-  /api/v1/workers/{id}/heartbeat:
-    post:
+      - sessions
+    get:
       consumes:
       - application/json
-      description: Update worker status with current active session count
+      description: Get detailed information about a specific browser session by its
+        ID
       parameters:
-      - description: Worker ID (UUID)
+      - description: Session ID (UUID)
         in: path
         name: id
         required: true
         type: string
-      - description: Heartbeat data
-        in: body
-        name: heartbeat
-        required: true
-        schema:
-          $ref: '#/definitions/WorkerHeartbeatRequest'
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: Session details
           schema:
-            $ref: '#/definitions/MessageResponse'
+            $ref: '#/definitions/Session'
         "400":
-          description: Bad Request
+          description: Invalid session ID
           schema:
             $ref: '#/definitions/ErrorResponse'
-        "500":
-          description: Internal Server Error
+        "404":
+          description: Session not found
           schema:
             $ref: '#/definitions/ErrorResponse'
-      summary: Send worker heartbeat
+      summary: Get a browser session
       tags:
-      - workers
-  /api/v1/workers/{id}/pause:
-    post:
+      - sessions
+  /api/v1/sessions/{id}/events:
+    get:
       consumes:
       - application/json
-      description: Pause or resume a worker to control its availability
+      description: Get a list of events for browser sessions with optional filtering
+        by session ID, event type, time range, and pagination
       parameters:
-      - description: Worker ID (UUID)
+      - description: Session ID (UUID)
         in: path
         name: id
         required: true
         type: string
-      - description: Pause configuration
-        in: body
-        name: pause
-        required: true
-        schema:
-          $ref: '#/definitions/WorkerPauseRequest'
+      - description: Session ID (UUID) - alternative to path parameter
+        in: query
+        name: session_id
+        type: string
+      - description: Filter by event type
+        enum:
+        - session_created
+        - resource_allocated
+        - session_starting
+        - container_started
+        - browser_started
+        - session_available
+        - session_claimed
+        - session_assigned
+        - session_ready
+        - session_active
+        - session_idle
+        - heartbeat
+        - pool_added
+        - pool_removed
+        - pool_drained
+        - session_completed
+        - session_expired
+        - session_timed_out
+        - session_terminated
+        - startup_failed
+        - browser_crashed
+        - container_crashed
+        - resource_exhausted
+        - network_error
+        - status_changed
+        - config_updated
+        - health_check
+        in: query
+        name: event_type
+        type: string
+      - description: Filter events after this time (RFC3339 format)
+        in: query
+        name: start_time
+        type: string
+      - description: Filter events before this time (RFC3339 format)
+        in: query
+        name: end_time
+        type: string
+      - default: 0
+        description: Number of events to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      - default: 100
+        description: Maximum number of events to return
+        in: query
+        maximum: 1000
+        minimum: 1
+        name: limit
+        type: integer
       produces:
       - application/json
       responses:
         "200":
-          description: OK
+          description: List of events
           schema:
-            $ref: '#/definitions/MessageResponse'
+            $ref: '#/definitions/SessionEventListResponse'
         "400":
-          description: Bad Request
+          description: Invalid session ID or parameters
           schema:
             $ref: '#/definitions/ErrorResponse'
         "500":
-          description: Internal Server Error
+          description: Internal server error
           schema:
             $ref: '#/definitions/ErrorResponse'
-      summary: Pause or resume a worker
+      summary: List session events
       tags:
-      - workers
+      - events
+    post:
+      consumes:
+      - application/json
+      description: Create a new event for a browser session. The session ID can be
+        provided in the URL path or in the request body.
+      parameters:
+      - description: Session ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Event data
+        in: body
+        name: event
+        required: true
+        schema:
+          $ref: '#/definitions/SessionEvent'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Event created successfully
+          schema:
+            $ref: '#/definitions/SessionEvent'
+        "400":
+          description: Invalid request data or missing session_id/event
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Create a session event
+      tags:
+      - events
+  /api/v1/sessions/{id}/metrics:
+    post:
+      consumes:
+      - application/json
+      description: Create performance metrics for a browser session. The session ID
+        can be provided in the URL path or in the request body.
+      parameters:
+      - description: Session ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Performance metrics data
+        in: body
+        name: metrics
+        required: true
+        schema:
+          $ref: '#/definitions/SessionMetrics'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Metrics created successfully
+          schema:
+            $ref: '#/definitions/SessionMetrics'
+        "400":
+          description: Invalid request data or missing session_id
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      summary: Create session metrics
+      tags:
+      - metrics
   /api/v1/workpools:
     get:
       consumes:
@@ -1217,6 +2154,10 @@ paths:
       tags:
       - pool-management
 securityDefinitions:
-  BasicAuth:
-    type: basic
+  ApiKeyAuth:
+    description: API key for authentication. Can also be provided via query parameter
+      'api_key' or Authorization header.
+    in: header
+    name: X-API-Key
+    type: apiKey
 swagger: "2.0"

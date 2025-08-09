@@ -1,0 +1,22 @@
+{
+  "name": "browsergrid-deployment-demo",
+  "version": "1.0.0",
+  "description": "BrowserGrid deployment system demonstration",
+  "type": "module",
+  "main": "deployment-demo.js",
+  "scripts": {
+    "start": "node deployment-demo.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "browsergrid",
+    "browser",
+    "automation",
+    "deployment"
+  ],
+  "author": "BrowserGrid Team",
+  "license": "MIT",
+  "dependencies": {
+    "playwright": "^1.40.0"
+  }
+} 

@@ -7,6 +7,8 @@ import (
 
 	"ariga.io/atlas-provider-gorm/gormschema"
 
+	"github.com/autocrawlerHQ/browsergrid/internal/deployments"
+	"github.com/autocrawlerHQ/browsergrid/internal/profiles"
 	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
 	"github.com/autocrawlerHQ/browsergrid/internal/workpool"
 )
@@ -18,7 +20,9 @@ func main() {
 		&sessions.SessionMetrics{},
 		&sessions.Pool{},
 		&workpool.WorkPool{},
-		&workpool.Worker{},
+		&profiles.Profile{},
+		&deployments.Deployment{},
+		&deployments.DeploymentRun{},
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to load gorm schema: %v\n", err)

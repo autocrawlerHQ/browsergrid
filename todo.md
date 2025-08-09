@@ -4,34 +4,44 @@
 - [ ] Test warm pools functionality
 - [ ] Fix worker cleanup - resolve duplicate worker entries in database when users close down workers
 - [ ] Fix active sessions not updating in UI
-- [ ] Investigate session random shutdown and failed state - check timeout handling
+- [x] Investigate session random shutdown and failed state - check timeout handling
 - [ ] Add duration counter to UI for sessions
-- [ ] Browser container should stream visual output
-- [ ] Connect webhook system between server and browser instances
+- [x] Browser container should stream visual output
 - [ ] Migrate auth from hard coded to a server action where hash is saved in the database
 
-## Testing
+- [ ] Add CUA to browser instances
+- [ ] Add chat functionality to browsergrid (chat with sessions, chat with workers, chat with deployments, chat with workpools, chat with profiles) using MCP
+
+- [ ] Add storage system for browser profiles, deployment artifacts, deployment logs, etc.
+
+- [x] Add deployment system
+- [x] Add deployment run system
+- [ ] Add scheduled tasks for deployments
+
+- [ ] improve task ui to see what tasks are scheduled and individual stats on each task
+
+- [ ] Add bring your own proxy system
+- [ ] Network interceptor for browser sessions, should be reusable stored in server applied to browser instances when requested
+
+
+- [ ] Explore pluggable side car services that connect to browser instances and provide additional functionality
+- [ ] Built in custom defined CDP events  like browserless and brightdata ex. `BrowserGrid.DetectCaptcha` 
+- [ ] Add a way to add custom CDP events to browser instances
+
+ ## Testing
 - [x] Write system tests for core server framework (DB, migrations, app provisioning)
 - [x] Write API tests
-- [ ] Write browser tests
+- [x] Write browser tests
 - [ ] Add automated readme badges based on test results
 
 ## Client Development & Connection System
-- [ ] Network interceptor for browser sessions, should be reusable stored in server applied to browser instances when requested
-- [ ] Refactor client by removing CLI functionality
-- [ ] Create specialized clients:
-  - [ ] Worker client
-  - [ ] Pool client
-  - [ ] Session instance client (for browser session communication)
-  - [ ] Webhook client
-- [ ] Build browser group functionality
+
+
 - [ ] Create CLI and SDK from client code
 - [ ] Develop SDKs in:
   - [ ] JavaScript/TypeScript
   - [ ] Python
-  - [ ] Go
-  - [ ] Java
-  - [ ] C#
+ 
 - [ ] Implement quick connect endpoint (e.g., `playwright.connect_over_cdp("connect.browsergrid.io")`)
   - [ ] Support ephemeral sessions that live only as long as the connection
   - [ ] Handle connection timeouts and reconnection logic
@@ -41,8 +51,7 @@
   - [ ] Implement session state persistence
 
 ## API Integration
-- [ ] Link server API and browser instance API
-- [ ] Integrate webhook API between server and browser instance
+- [x] Link server API and browser instance API
 
 ## Worker Integrations
 - [x] local worker
@@ -54,16 +63,15 @@
 
 ## UI Development
 - [ ] Add UI using components from AutoCrawler console repo
-  - [ ] Session management (list, details with chat interface)
-  - [ ] Profile management (list, details)
-  - [ ] Work pool management (list, details)
-  - [ ] Worker management (list, details)
-  - [ ] Webhook management (list, details, CRUD operations)
-  - [ ] Deployment management (list, details, CRUD operations (deployment runs with browser instance)   )
+  - [x] Session management (list, details with chat interface)
+  - [x] Profile management (list, details)
+  - [x] Work pool management (list, details)
+  - [x] Worker management (list, details)
+  - [x] Deployment management (list, details, CRUD operations (deployment runs with browser instance)   )
   - [ ] Observability for sessions, deployments, workpools, workers  (metrics, logs, traces)
 
 ## Documentation
-- [ ] Create comprehensive API documentation
+- [x] Create comprehensive API documentation
 - [ ] Write user guides for each client SDK
 - [ ] Develop installation and deployment guides
 - [ ] Create browser compatibility matrix documentation
@@ -74,20 +82,18 @@
 - [ ] Add Issue templates for bugs, feature requests, and documentation updates 
 
 ## Version Management
-- [ ] Implement tagging, semantic versioning, and releases
-- [ ] Support multiple clients across different languages
+- [x] Implement tagging, semantic versioning, and releases
 
 ## Profile Management
-- [ ] Implement persistent user data directories
-- [ ] Design volume management across different platforms:
-  - [ ] Docker, Kubernetes, cloud providers (Azure, AWS, GCP)
-  - [ ] Support for multiple browser types and versions
-- [ ] Enable multiple profiles per instance
-- [ ] Allow profile sharing between instances
-- [ ] Address concurrency issues with shared profiles
+- [x] Implement persistent user data directories
+- [x] Design volume management across different platforms:
+  - [x] Docker, Kubernetes, cloud providers (Azure, AWS, GCP)
+  - [x] Support for multiple browser types and versions
+- [x] Enable multiple profiles per instance
+- [x] Allow profile sharing between instances (NOTE: this works but its last to write wins after containers terminate)
 
 ## Deployment System
-- [ ] Add deployments to package code that runs with browser instances ( or separately, not sure yet )
+- [x] Add deployments to package code that runs with browser instances ( or separately, not sure yet )
 
 ## Security
 - [ ] Implement secure authentication and authorization mechanisms
