@@ -50,7 +50,7 @@ func TestPoolServiceImpl_GetOrCreateDefault(t *testing.T) {
 				existingPool := WorkPool{
 					ID:             uuid.New(),
 					Name:           "default-azure_aci",
-					Provider:       ProviderACI,
+					Provider:       ProviderDocker,
 					MaxConcurrency: 15,
 					AutoScale:      false,
 					CreatedAt:      time.Now(),
@@ -67,7 +67,7 @@ func TestPoolServiceImpl_GetOrCreateDefault(t *testing.T) {
 				err = db.Where("id = ?", poolID).First(&pool).Error
 				require.NoError(t, err)
 				assert.Equal(t, "default-azure_aci", pool.Name)
-				assert.Equal(t, ProviderACI, pool.Provider)
+				assert.Equal(t, ProviderDocker, pool.Provider)
 				assert.Equal(t, 15, pool.MaxConcurrency)
 				assert.False(t, pool.AutoScale)
 
@@ -89,7 +89,7 @@ func TestPoolServiceImpl_GetOrCreateDefault(t *testing.T) {
 				err = db.Where("id = ?", poolID).First(&pool).Error
 				require.NoError(t, err)
 				assert.Equal(t, "default-local", pool.Name)
-				assert.Equal(t, ProviderLocal, pool.Provider)
+				assert.Equal(t, ProviderDocker, pool.Provider)
 			},
 		},
 	}
