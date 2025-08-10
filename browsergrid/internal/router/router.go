@@ -17,9 +17,11 @@ import (
 	"github.com/autocrawlerHQ/browsergrid/internal/profiles"
 	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
 	"github.com/autocrawlerHQ/browsergrid/internal/workpool"
+
+	"github.com/autocrawlerHQ/browsergrid/internal/storage"
 )
 
-func New(database *db.DB, reconciler *poolmgr.Reconciler, taskClient *asynq.Client, redisOpt asynq.RedisClientOpt) *gin.Engine {
+func New(database *db.DB, reconciler *poolmgr.Reconciler, taskClient *asynq.Client, redisOpt asynq.RedisClientOpt, storeBackend storage.Backend) *gin.Engine {
 	r := gin.Default()
 
 	r.Use(cors.New(cors.Config{
@@ -73,8 +75,9 @@ func New(database *db.DB, reconciler *poolmgr.Reconciler, taskClient *asynq.Clie
 		sessions.RegisterRoutes(v1, sessionDeps)
 
 		profileDeps := profiles.Dependencies{
-			DB:    database.DB,
-			Store: profileStore,
+			DB:      database.DB,
+			Store:   profileStore,
+			Storage: storeBackend,
 		}
 		profiles.RegisterRoutes(v1, profileDeps)
 
@@ -83,6 +86,7 @@ func New(database *db.DB, reconciler *poolmgr.Reconciler, taskClient *asynq.Clie
 		deploymentDeps := deployments.Dependencies{
 			DB:         database.DB,
 			TaskClient: taskClient,
+			Storage:    storeBackend,
 		}
 		deployments.RegisterRoutes(v1, deploymentDeps)
 

@@ -19,6 +19,10 @@ import (
 	"github.com/autocrawlerHQ/browsergrid/internal/scheduler"
 
 	_ "github.com/autocrawlerHQ/browsergrid/docs"
+
+	"github.com/autocrawlerHQ/browsergrid/internal/storage"
+	_ "github.com/autocrawlerHQ/browsergrid/internal/storage/local"
+	_ "github.com/autocrawlerHQ/browsergrid/internal/storage/s3"
 )
 
 // @title           BrowserGrid API
@@ -100,6 +104,10 @@ func main() {
 	defer schedulerSvc.Stop()
 
 	reconciler := poolmgr.NewReconciler(database.DB, taskClient, redisOpt)
+	storageBackend, err := storage.New(cfg.Storage.Backend, map[string]string{"path": cfg.Storage.LocalPath, "bucket": cfg.Storage.S3Bucket, "region": cfg.Storage.S3Region, "prefix": cfg.Storage.S3Prefix})
+	if err != nil {
+		log.Fatalf("storage init: %v", err)
+	}
 	reconcilerCtx, reconcilerCancel := context.WithCancel(ctx)
 	defer reconcilerCancel()
 
@@ -112,7 +120,7 @@ func main() {
 		}
 	}()
 
-	r := router.New(database, reconciler, taskClient, redisOpt)
+	r := router.New(database, reconciler, taskClient, redisOpt, storageBackend)
 
 	srv := &http.Server{
 		Addr:         ":" + strconv.Itoa(cfg.Port),
