@@ -1,16 +1,19 @@
 package deployments
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
-	"net/http"
-	"strconv"
-
+	"fmt"
+	"github.com/autocrawlerHQ/browsergrid/internal/storage"
+	"github.com/autocrawlerHQ/browsergrid/internal/tasks"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
-
-	"github.com/autocrawlerHQ/browsergrid/internal/tasks"
+	"io"
+	"net/http"
+	"strconv"
 )
 
 // CreateDeploymentRequest represents the request to create a new deployment
@@ -73,6 +76,7 @@ type TaskClient interface {
 type Dependencies struct {
 	DB         *gorm.DB
 	TaskClient TaskClient
+	Storage    storage.Backend
 }
 
 // RegisterRoutes registers deployment management routes
@@ -80,6 +84,7 @@ func RegisterRoutes(rg *gin.RouterGroup, deps Dependencies) {
 	store := NewStore(deps.DB)
 
 	// Deployment routes
+	rg.POST("/deployments/upload", uploadDeployment(deps))
 	rg.POST("/deployments", createDeployment(store, deps))
 	rg.GET("/deployments", listDeployments(store))
 	rg.GET("/deployments/:id", getDeployment(store))
@@ -647,5 +652,50 @@ func listAllDeploymentRuns(store *Store) gin.HandlerFunc {
 			Offset: offset,
 			Limit:  limit,
 		})
+	}
+}
+
+// UploadDeploymentResponse represents the response after uploading a deployment package
+// @Description Response containing storage information for an uploaded deployment package
+// @name UploadDeploymentResponse
+// @Schema
+// @public
+// @tags deployments
+
+type UploadDeploymentResponse struct {
+	PackageURL  string `json:"package_url"`
+	PackageHash string `json:"package_hash"`
+}
+
+// uploadDeployment handles deployment package uploads
+// @Summary Upload deployment package
+// @Description Upload a deployment package and receive storage reference details
+// @Tags deployments
+// @Accept multipart/form-data
+// @Produce json
+// @Param file formData file true "Deployment package"
+// @Success 200 {object} UploadDeploymentResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/deployments/upload [post]
+func uploadDeployment(deps Dependencies) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		file, header, err := c.Request.FormFile("file")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "file is required"})
+			return
+		}
+		defer file.Close()
+
+		id := uuid.New()
+		key := fmt.Sprintf("deployments/%s/%s", id.String(), header.Filename)
+		hasher := sha256.New()
+		reader := io.TeeReader(file, hasher)
+		if err := deps.Storage.Save(c.Request.Context(), key, reader); err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+			return
+		}
+		hash := hex.EncodeToString(hasher.Sum(nil))
+		c.JSON(http.StatusOK, UploadDeploymentResponse{PackageURL: key, PackageHash: hash})
 	}
 }

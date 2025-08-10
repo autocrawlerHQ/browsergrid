@@ -5,10 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"testing"
-
+	"github.com/autocrawlerHQ/browsergrid/internal/storage"
+	_ "github.com/autocrawlerHQ/browsergrid/internal/storage/local"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
@@ -18,6 +16,9 @@ import (
 	postgresDriver "gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	"net/http"
+	"net/http/httptest"
+	"testing"
 )
 
 // Mock task client for testing
@@ -66,9 +67,12 @@ func setupHTTPTestDB(t *testing.T) (*gorm.DB, *gin.Engine) {
 
 	v1 := router.Group("/api/v1")
 	mockClient := &mockTaskClient{}
+	backend, err := storage.New("local", map[string]string{"path": t.TempDir()})
+	require.NoError(t, err)
 	RegisterRoutes(v1, Dependencies{
 		DB:         db,
 		TaskClient: mockClient,
+		Storage:    backend,
 	})
 
 	return db, router
@@ -1096,9 +1100,12 @@ func TestTaskEnqueueError(t *testing.T) {
 	router := gin.New()
 	v1 := router.Group("/api/v1")
 	mockClient := &mockTaskClient{shouldError: true}
+	backend, err := storage.New("local", map[string]string{"path": t.TempDir()})
+	require.NoError(t, err)
 	RegisterRoutes(v1, Dependencies{
 		DB:         db,
 		TaskClient: mockClient,
+		Storage:    backend,
 	})
 
 	// Try to create a run (should fail due to task enqueue error)

@@ -2,20 +2,20 @@ package profiles
 
 import (
 	"fmt"
-	"net/http"
-	"strconv"
-
+	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
+	"github.com/autocrawlerHQ/browsergrid/internal/storage"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-
-	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
+	"net/http"
+	"strconv"
 )
 
 // Dependencies holds the dependencies for profile handlers
 type Dependencies struct {
-	DB    *gorm.DB
-	Store *Store
+	DB      *gorm.DB
+	Store   *Store
+	Storage storage.Backend
 }
 
 // RegisterRoutes registers profile management routes
@@ -271,7 +271,6 @@ func importProfile(deps Dependencies) gin.HandlerFunc {
 			return
 		}
 
-		// Get uploaded file
 		file, header, err := c.Request.FormFile("file")
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "file is required"})
@@ -279,13 +278,11 @@ func importProfile(deps Dependencies) gin.HandlerFunc {
 		}
 		defer file.Close()
 
-		// Validate file size (max 1GB)
 		if header.Size > maxProfileSize {
 			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("file size exceeds maximum of %d bytes", maxProfileSize)})
 			return
 		}
 
-		// Check if name is unique
 		existing, err := deps.Store.GetProfileByName(c.Request.Context(), req.Name)
 		if err == nil && existing != nil {
 			c.JSON(http.StatusConflict, gin.H{"error": "profile with this name already exists"})
@@ -298,13 +295,18 @@ func importProfile(deps Dependencies) gin.HandlerFunc {
 			Browser:     req.Browser,
 		}
 
-		// Create profile in database
 		if err := deps.Store.CreateProfile(c.Request.Context(), profile); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
-		// Get updated profile
+		storageKey := fmt.Sprintf("profiles/%s.zip", profile.ID.String())
+		if err := deps.Storage.Save(c.Request.Context(), storageKey, file); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		_ = deps.Store.UpdateProfileSize(c.Request.Context(), profile.ID, header.Size)
+
 		profile, _ = deps.Store.GetProfile(c.Request.Context(), profile.ID)
 		c.JSON(http.StatusCreated, profile)
 	}

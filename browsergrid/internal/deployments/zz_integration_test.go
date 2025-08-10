@@ -5,14 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"os"
-	"path/filepath"
-	"sync"
-	"testing"
-	"time"
-
+	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
+	"github.com/autocrawlerHQ/browsergrid/internal/storage"
+	_ "github.com/autocrawlerHQ/browsergrid/internal/storage/local"
+	"github.com/autocrawlerHQ/browsergrid/internal/tasks"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
@@ -21,9 +17,13 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-
-	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
-	"github.com/autocrawlerHQ/browsergrid/internal/tasks"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"sync"
+	"testing"
+	"time"
 )
 
 // IntegrationTestSuite provides a complete test environment
@@ -110,9 +110,12 @@ func setupIntegrationTest(t *testing.T) *IntegrationTestSuite {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	v1 := router.Group("/api/v1")
+	backend, err := storage.New("local", map[string]string{"path": tempDir})
+	require.NoError(t, err)
 	RegisterRoutes(v1, Dependencies{
 		DB:         db,
 		TaskClient: taskQueue,
+		Storage:    backend,
 	})
 
 	// Setup task handler

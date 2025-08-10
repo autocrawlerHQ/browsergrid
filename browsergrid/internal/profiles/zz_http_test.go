@@ -5,6 +5,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
+	"github.com/autocrawlerHQ/browsergrid/internal/storage"
+	_ "github.com/autocrawlerHQ/browsergrid/internal/storage/local"
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -12,15 +21,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
-
-	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
 )
 
 func setupTestRouter(t *testing.T) (*gin.Engine, *Store) {
@@ -37,9 +37,13 @@ func setupTestRouter(t *testing.T) (*gin.Engine, *Store) {
 	router := gin.New()
 	api := router.Group("/api/v1")
 
+	backend, err := storage.New("local", map[string]string{"path": t.TempDir()})
+	require.NoError(t, err)
+
 	deps := Dependencies{
-		DB:    db,
-		Store: store,
+		DB:      db,
+		Store:   store,
+		Storage: backend,
 	}
 
 	RegisterRoutes(api, deps)
