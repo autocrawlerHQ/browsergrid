@@ -14,8 +14,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
-	"github.com/autocrawlerHQ/browsergrid/internal/deployments"
-	"github.com/autocrawlerHQ/browsergrid/internal/profiles"
+    "github.com/autocrawlerHQ/browsergrid/internal/deployments"
 	"github.com/autocrawlerHQ/browsergrid/internal/provider"
 	_ "github.com/autocrawlerHQ/browsergrid/internal/provider/docker"
 	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
@@ -43,12 +42,7 @@ func main() {
 		log.Fatal("[STARTUP] ✗ Failed to connect to database:", err)
 	}
 
-	sessStore := sessions.NewStore(db)
-	profileStore := profiles.NewStore(db)
-	resolvedProfileStore, err := profiles.ResolveFromEnv()
-	if err != nil {
-		log.Fatal("[STARTUP] ✗ Failed to initialize profile store:", err)
-	}
+    sessStore := sessions.NewStore(db)
 
 	// Initialize deployment runner
 	deploymentRunner := deployments.NewDeploymentRunner(db, "/tmp/deployments")
@@ -72,8 +66,8 @@ func main() {
 
 	mux := asynq.NewServeMux()
 
-	mux.HandleFunc(tasks.TypeSessionStart, handleSessionStart(sessStore, prov))
-	mux.HandleFunc(tasks.TypeSessionStop, handleSessionStop(sessStore, prov, profileStore, resolvedProfileStore))
+    mux.HandleFunc(tasks.TypeSessionStart, handleSessionStart(sessStore, prov))
+    mux.HandleFunc(tasks.TypeSessionStop, handleSessionStop(sessStore, prov))
 	mux.HandleFunc(tasks.TypeSessionHealthCheck, handleSessionHealthCheck(sessStore, prov))
 	mux.HandleFunc(tasks.TypeSessionTimeout, handleSessionTimeout(sessStore, prov, cfg.RedisAddr))
 	mux.HandleFunc(tasks.TypeDeploymentRun, handleDeploymentRun(deploymentRunner))
@@ -119,12 +113,7 @@ func handleSessionStart(store *sessions.Store, prov provider.Provisioner) asynq.
 			return fmt.Errorf("failed to get session: %w", err)
 		}
 
-		// Log profile information
-		if sess.ProfileID != nil {
-			log.Printf("[TASK] Session %s uses profile %s", sess.ID, *sess.ProfileID)
-		} else {
-			log.Printf("[TASK] Session %s has no profile", sess.ID)
-		}
+        // Profile logging removed
 
 		if err := store.UpdateSessionStatus(ctx, sess.ID, sessions.StatusStarting); err != nil {
 			log.Printf("[TASK] Warning: Failed to update session status: %v", err)
@@ -182,7 +171,7 @@ func handleSessionStart(store *sessions.Store, prov provider.Provisioner) asynq.
 	}
 }
 
-func handleSessionStop(store *sessions.Store, prov provider.Provisioner, profileStore *profiles.Store, localProfileStore *profiles.LocalProfileStore) asynq.HandlerFunc {
+func handleSessionStop(store *sessions.Store, prov provider.Provisioner) asynq.HandlerFunc {
 	return func(ctx context.Context, t *asynq.Task) error {
 		var payload tasks.SessionStopPayload
 		if err := payload.Unmarshal(t.Payload()); err != nil {
@@ -196,23 +185,7 @@ func handleSessionStop(store *sessions.Store, prov provider.Provisioner, profile
 			return fmt.Errorf("failed to get session: %w", err)
 		}
 
-		// Save profile data if session has a profile ID
-		if sess.ProfileID != nil {
-			log.Printf("[TASK] Updating profile metadata for session %s profile %s", sess.ID, *sess.ProfileID)
-
-			// With volume mounting, the profile data is already persisted
-			// We just need to update the metadata (size, last used timestamp)
-			if err := localProfileStore.SaveProfileData(ctx, sess.ProfileID.String(), ""); err != nil {
-				log.Printf("[TASK] Warning: Failed to update profile metadata: %v", err)
-			} else {
-				// Update profile size and last used timestamp
-				if size, err := localProfileStore.GetProfileSize(ctx, sess.ProfileID.String()); err == nil {
-					profileStore.UpdateProfileSize(ctx, *sess.ProfileID, size)
-				}
-				profileStore.UpdateProfileLastUsed(ctx, *sess.ProfileID)
-				log.Printf("[TASK] ✓ Profile metadata updated successfully")
-			}
-		}
+        // Profile persistence removed
 
 		if err := prov.Stop(ctx, sess); err != nil {
 			log.Printf("[TASK] ✗ Error stopping provider for session %s: %v", sess.ID, err)

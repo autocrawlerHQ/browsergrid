@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -15,7 +14,6 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/google/uuid"
@@ -49,14 +47,6 @@ func (p *DockerProvisioner) GetType() workpool.ProviderType { return workpool.Pr
 
 func (p *DockerProvisioner) keepContainers() bool {
 	return strings.ToLower(os.Getenv("BROWSERGRID_KEEP_CONTAINERS")) == "true"
-}
-
-// getenvOr returns the value of the environment variable key or fallback if not set
-func getenvOr(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return fallback
 }
 
 func (p *DockerProvisioner) Start(
@@ -104,22 +94,6 @@ func (p *DockerProvisioner) Start(
 		AutoRemove:   false,
 		PortBindings: natMap(p.defaultPort, 0),
 		Tmpfs:        map[string]string{"/dev/shm": "rw,size=2g"},
-	}
-
-	// Mount profile if specified
-	if sess.ProfileID != nil {
-		log.Printf("[DOCKER] Session %s requires profile %s", shortID, sess.ProfileID)
-		// Always mount the profiles volume and pass the profile ID to the container.
-		volumeName := getenvOr("BROWSERGRID_PROFILE_VOLUME_NAME", "browsergrid-server_profile_data")
-		hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{
-			Type:   mount.TypeVolume,
-			Source: volumeName,
-			Target: "/var/lib/browsergrid/profiles",
-		})
-		containerConfig.Env = append(containerConfig.Env, fmt.Sprintf("BROWSERGRID_PROFILE_ID=%s", sess.ProfileID.String()))
-		log.Printf("[DOCKER] Mounted profiles volume and set BROWSERGRID_PROFILE_ID for %s", sess.ProfileID)
-	} else {
-		log.Printf("[DOCKER] Session %s has no profile, using default browser data directory", shortID)
 	}
 
 	browserResp, err := p.cli.ContainerCreate(ctx,

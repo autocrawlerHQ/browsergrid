@@ -470,8 +470,7 @@ func TestGetQueueNameForProvider(t *testing.T) {
 		expected string
 	}{
 		{workpool.ProviderDocker, "default"},
-		{workpool.ProviderACI, "azure"},
-		{workpool.ProviderLocal, "local"},
+		{workpool.ProviderK8s, "k8s"},
 		{"unknown", "default"},
 	}
 
