@@ -108,7 +108,7 @@ func TestStore_CreateWorkPool(t *testing.T) {
 			pool: &WorkPool{
 				ID:             uuid.New(),
 				Name:           "test-pool-2",
-				Provider:       ProviderLocal,
+				Provider:       ProviderDocker,
 				MaxConcurrency: 5,
 			},
 			wantErr: false,
@@ -257,7 +257,7 @@ func TestStore_ListWorkPools(t *testing.T) {
 		},
 		{
 			Name:           "paused-pool",
-			Provider:       ProviderLocal,
+			Provider:       ProviderDocker,
 			MaxConcurrency: 5,
 			Paused:         true,
 		},

@@ -83,7 +83,7 @@ func TestCreateWorkPool(t *testing.T) {
 			name: "create minimal work pool",
 			requestBody: WorkPool{
 				Name:           "minimal-pool",
-				Provider:       ProviderLocal,
+				Provider:       ProviderDocker,
 				MaxConcurrency: 5,
 			},
 			expectedStatus: http.StatusCreated,
@@ -173,7 +173,7 @@ func TestListWorkPools(t *testing.T) {
 		},
 		{
 			Name:           "paused-pool",
-			Provider:       ProviderLocal,
+			Provider:       ProviderDocker,
 			MaxConcurrency: 5,
 			Paused:         true,
 		},
