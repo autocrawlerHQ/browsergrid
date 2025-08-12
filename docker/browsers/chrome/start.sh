@@ -121,102 +121,17 @@ start_chrome() {
   return $exit_code
 }
 
-# Handle profile data directory setup
-# Two scenarios:
-# 1. Direct mount: Profile is mounted directly to /home/user/data-dir (preferred)
-# 2. Fallback: Full profiles volume mounted with BROWSERGRID_PROFILE_ID env var
-
-if [ -n "$BROWSERGRID_PROFILE_ID" ]; then
-  # Fallback scenario: Full profiles volume mounted, use environment variable
-  echo "Using fallback profile mounting with BROWSERGRID_PROFILE_ID: $BROWSERGRID_PROFILE_ID"
-  PROFILE_PATH="/var/lib/browsergrid/profiles/${BROWSERGRID_PROFILE_ID}/user-data"
-  
-  if [ -d "$PROFILE_PATH" ]; then
-    echo "Profile path found: $PROFILE_PATH"
-    
-    # Check profile directory permissions and ownership
-    echo "Profile directory info:"
-    ls -la "$PROFILE_PATH" || echo "Cannot list profile directory"
-    
-    # Use the permission checker script to diagnose and potentially fix issues
-    if [ -f "/usr/local/bin/check_profile_permissions.sh" ]; then
-      echo "Running profile permission checker..."
-      /usr/local/bin/check_profile_permissions.sh "$PROFILE_PATH"
-    fi
-    
-    # Check if profile directory is accessible
-    if [ ! -r "$PROFILE_PATH" ]; then
-      echo "ERROR: Profile directory is not readable: $PROFILE_PATH"
-      echo "Creating new data directory instead"
-      mkdir -p ${HOME}/data-dir
-      chmod 755 ${HOME}/data-dir
-    else
-      # Remove existing data-dir if it exists
-      if [ -d "${HOME}/data-dir" ]; then
-        rm -rf ${HOME}/data-dir
-      fi
-      
-      # Create symlink to profile data
-      ln -sfn $PROFILE_PATH ${HOME}/data-dir
-      
-      # Verify symlink was created successfully
-      if [ ! -L "${HOME}/data-dir" ]; then
-        echo "ERROR: Failed to create symlink to profile data"
-        echo "Creating new data directory instead"
-        rm -rf ${HOME}/data-dir
-        mkdir -p ${HOME}/data-dir
-        chmod 755 ${HOME}/data-dir
-      else
-        echo "Profile symlinked successfully"
-        echo "Symlink info:"
-        ls -la ${HOME}/data-dir
-      fi
-    fi
-  else
-    echo "Profile $BROWSERGRID_PROFILE_ID not found at $PROFILE_PATH"
-    echo "Creating new data directory"
-    mkdir -p ${HOME}/data-dir
-    chmod 755 ${HOME}/data-dir
-  fi
-elif [ -d "${HOME}/data-dir" ]; then
-  # Direct mount scenario: Profile is already mounted to /home/user/data-dir
-  echo "Using directly mounted profile directory: ${HOME}/data-dir"
-  
-  # Check if it looks like a mounted profile (has Chrome profile structure)
-  if [ -f "${HOME}/data-dir/Preferences" ] || [ -d "${HOME}/data-dir/Default" ] || [ -f "${HOME}/data-dir/Local State" ]; then
-    echo "Detected existing Chrome profile data"
-    
-    # Check profile directory permissions and ownership
-    echo "Profile directory info:"
-    ls -la "${HOME}/data-dir" || echo "Cannot list profile directory"
-    
-    # Use the permission checker script to diagnose and potentially fix issues
-    if [ -f "/usr/local/bin/check_profile_permissions.sh" ]; then
-      echo "Running profile permission checker..."
-      /usr/local/bin/check_profile_permissions.sh "${HOME}/data-dir"
-    fi
-  else
-    echo "Data directory exists but appears to be empty or new"
-  fi
-  
-  # Verify the directory is accessible
-  if [ ! -r "${HOME}/data-dir" ]; then
-    echo "ERROR: Data directory is not readable: ${HOME}/data-dir"
-    echo "Creating new data directory instead"
-    rm -rf ${HOME}/data-dir
-    mkdir -p ${HOME}/data-dir
-    chmod 755 ${HOME}/data-dir
-  elif [ ! -w "${HOME}/data-dir" ]; then
-    echo "WARNING: Data directory is not writable: ${HOME}/data-dir"
-    echo "Chrome may fail to start or function properly"
-  else
-    echo "Data directory is accessible"
+# Handle profile data directory setup (single, elegant path)
+if [ -d "${HOME}/data-dir" ]; then
+  echo "Using data directory: ${HOME}/data-dir"
+  # Optionally run permission checker if present
+  if [ -f "/usr/local/bin/check_profile_permissions.sh" ]; then
+    /usr/local/bin/check_profile_permissions.sh "${HOME}/data-dir" || true
   fi
 else
-  # No profile specified and no data directory exists, create it
   echo "Creating Chrome data directory"
   mkdir -p ${HOME}/data-dir
-  chmod 755 ${HOME}/data-dir
+  chmod 755 ${HOME}/data-dir || true
 fi
 
 PROXY_ARG=""

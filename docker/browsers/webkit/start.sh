@@ -35,58 +35,12 @@ if [ -z "$WEBKIT_PATH" ]; then
 fi
 BROWSER_PATH="${WEBKIT_PATH}/minibrowser-gtk"
 
-# Handle profile mounting when running in Docker
-if [ -n "$BROWSERGRID_PROFILE_ID" ]; then
-  PROFILE_PATH="/var/lib/browsergrid/profiles/${BROWSERGRID_PROFILE_ID}/user-data"
-  if [ -d "$PROFILE_PATH" ]; then
-    echo "Using existing profile: $BROWSERGRID_PROFILE_ID"
-    echo "Profile path: $PROFILE_PATH"
-    
-    # Remove existing webkit-data if it's not a symlink
-    if [ -d "${HOME}/webkit-data" ] && [ ! -L "${HOME}/webkit-data" ]; then
-      rm -rf ${HOME}/webkit-data
-    fi
-    
-    # Create symlink to profile data
-    ln -sfn $PROFILE_PATH ${HOME}/webkit-data
-    
-    # Ensure proper permissions (only if we can write to it)
-    if [ -w ${HOME}/webkit-data ]; then
-      chmod 755 ${HOME}/webkit-data
-    else
-      echo "Warning: Cannot change permissions on ${HOME}/webkit-data (this is normal for volume mounts)"
-    fi
-    
-    echo "Profile mounted successfully"
-  else
-    echo "Profile $BROWSERGRID_PROFILE_ID not found at $PROFILE_PATH"
-    echo "Creating new WebKit data directory"
-    mkdir -p ${HOME}/webkit-data
-    if [ -w ${HOME}/webkit-data ]; then
-      chmod 755 ${HOME}/webkit-data
-    else
-      echo "Warning: Cannot change permissions on ${HOME}/webkit-data (this is normal for volume mounts)"
-    fi
-  fi
-else
-  # No profile specified, use default behavior
-  if [ ! -d "${HOME}/webkit-data" ]; then
-    echo "Creating WebKit data directory"
-    mkdir -p ${HOME}/webkit-data
-    if [ -w ${HOME}/webkit-data ]; then
-      chmod 755 ${HOME}/webkit-data
-    else
-      echo "Warning: Cannot change permissions on ${HOME}/webkit-data (this is normal for volume mounts)"
-    fi
-  else
-    echo "WebKit data directory exists, ensuring correct permissions"
-    if [ -w ${HOME}/webkit-data ]; then
-      chmod 755 ${HOME}/webkit-data
-    else
-      echo "Warning: Cannot change permissions on ${HOME}/webkit-data (this is normal for volume mounts)"
-    fi
-  fi
+# Handle WebKit data directory
+if [ ! -d "${HOME}/webkit-data" ]; then
+  echo "Creating WebKit data directory"
+  mkdir -p ${HOME}/webkit-data
 fi
+chmod 755 ${HOME}/webkit-data 2>/dev/null || true
 
 # Create a WebKit to CDP proxy service
 echo "Creating WebKit proxy script"

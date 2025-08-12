@@ -12,8 +12,8 @@ services:
       - ../.air.toml:/app/.air.toml:ro
       # Cache Go modules for faster rebuilds
       - go_mod_cache:/go/pkg/mod
-      # Shared profile storage
-      - profile_data:/var/lib/browsergrid/profiles
+      # Storage volumes for profiles and artifacts
+      - storage_data:/var/lib/browsergrid/storage
     environment:
       - BROWSERGRID_ENV=dev
       - BROWSERGRID_POSTGRES_HOST=db
@@ -23,6 +23,7 @@ services:
       - BROWSERGRID_POSTGRES_PASSWORD=${BROWSERGRID_POSTGRES_PASSWORD:-browsergrid}
       - BROWSERGRID_POSTGRES_DB=${BROWSERGRID_POSTGRES_DB:-browsergrid}
       - BROWSERGRID_API_PORT=${BROWSERGRID_API_PORT:-8765}
+      # Storage configuration for development
     # Override healthcheck for dev (Air takes longer to start)
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8765/health"]
@@ -44,8 +45,10 @@ services:
       - go_mod_cache:/go/pkg/mod
       # Mount Docker socket for Docker provider
       - /var/run/docker.sock:/var/run/docker.sock
-      # Shared profile storage
-      - profile_data:/var/lib/browsergrid/profiles
+      # Storage volumes for profiles and artifacts
+      - storage_data:/var/lib/browsergrid/storage
+      # Temporary extraction directory for profiles
+      - /tmp/browsergrid:/tmp/browsergrid
     environment:
       - BROWSERGRID_POSTGRES_HOST=db
       - BROWSERGRID_POSTGRES_PORT=5432
@@ -57,6 +60,19 @@ services:
       - BROWSERGRID_WORKER_PROVIDER=${BROWSERGRID_WORKER_PROVIDER:-docker}
       - BROWSERGRID_WORKER_CONCURRENCY=${BROWSERGRID_WORKER_CONCURRENCY:-2}
       - BROWSERGRID_WORKER_POLL_INTERVAL=${BROWSERGRID_WORKER_POLL_INTERVAL:-10s}
+      # Storage configuration - must match server
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-local}
+      - STORAGE_PATH=/var/lib/browsergrid/storage
+      - STORAGE_S3_BUCKET=${STORAGE_S3_BUCKET:-}
+      - STORAGE_S3_REGION=${STORAGE_S3_REGION:-}
+      - STORAGE_S3_PREFIX=${STORAGE_S3_PREFIX:-}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      # Keep containers for debugging in dev
+      - BROWSERGRID_KEEP_CONTAINERS=${BROWSERGRID_KEEP_CONTAINERS:-true}
+    networks:
+      - browsergrid_server
+      - browsergrid  # Also connect to browser network for container communication
 
   prometheus:
     container_name: browsergrid-prometheus
@@ -95,7 +111,12 @@ services:
       - browsergrid_server
     restart: unless-stopped
 
+  
 volumes:
   go_mod_cache:
   prometheus_data:
-  profile_data: 
+  storage_data:     # Main storage volume for profiles, deployments, artifacts
+
+networks:
+  browsergrid:      # Network for browser containers
+    name: browsergrid

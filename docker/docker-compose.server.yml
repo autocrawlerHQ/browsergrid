@@ -52,6 +52,10 @@ services:
       - BROWSERGRID_POSTGRES_HOST=db
       - BROWSERGRID_POSTGRES_PORT=5432
       - REDIS_ADDR=redis:6379
+      # Storage configuration - using local storage for dev
+      - STORAGE_BACKEND=${STORAGE_BACKEND:-local}
+      - STORAGE_PATH=/var/lib/browsergrid/storage
+     
     depends_on:
       db:
         condition: service_healthy
@@ -60,7 +64,9 @@ services:
     networks:
       - browsergrid_server
     volumes:
-      - profile_data:/var/lib/browsergrid/profiles
+
+      # General storage for profiles, deployments, artifacts
+      - storage_data:/var/lib/browsergrid/storage
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8765/health"]
       interval: 10s
@@ -79,11 +85,14 @@ services:
       - BROWSERGRID_POSTGRES_HOST=db
       - BROWSERGRID_POSTGRES_PORT=5432
       - REDIS_ADDR=redis:6379
-      # - BROWSERGRID_WORKER_POOL_ID=${BROWSERGRID_WORKER_POOL_ID}  # Optional - will create default pool
       - BROWSERGRID_WORKER_NAME=${BROWSERGRID_WORKER_NAME:-worker-docker}
       - BROWSERGRID_WORKER_PROVIDER=${BROWSERGRID_WORKER_PROVIDER:-docker}
       - BROWSERGRID_WORKER_CONCURRENCY=${BROWSERGRID_WORKER_CONCURRENCY:-2}
       - BROWSERGRID_WORKER_POLL_INTERVAL=${BROWSERGRID_WORKER_POLL_INTERVAL:-10s}
+
+
+      # Docker-specific settings
+      - BROWSERGRID_KEEP_CONTAINERS=${BROWSERGRID_KEEP_CONTAINERS:-false}
     depends_on:
       db:
         condition: service_healthy
@@ -91,9 +100,11 @@ services:
         condition: service_healthy
     networks:
       - browsergrid_server
+      - browsergrid  # Also connect to browser network for container communication
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock  # For Docker provider
-      - profile_data:/var/lib/browsergrid/profiles  # Shared profile storage
+      - storage_data:/var/lib/browsergrid/storage   # Main storage backend
+      - /tmp/browsergrid:/tmp/browsergrid          # Temporary extraction directory
     restart: unless-stopped
 
   prometheus:
@@ -138,8 +149,15 @@ services:
 networks:
   browsergrid_server:
     name: browsergrid_server
+  browsergrid:
+    name: browsergrid  # Network for browser containers
 
 volumes:
   postgres_data:
   prometheus_data:
-  profile_data: 
+  storage_data:  # Main storage volume for profiles, deployments, artifacts
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${STORAGE_PATH:-./data/storage}  # Can be customized via .env

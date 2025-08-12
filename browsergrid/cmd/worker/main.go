@@ -1,12 +1,16 @@
 package main
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -14,10 +18,14 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
-    "github.com/autocrawlerHQ/browsergrid/internal/deployments"
+	"github.com/autocrawlerHQ/browsergrid/internal/config"
+	"github.com/autocrawlerHQ/browsergrid/internal/deployments"
 	"github.com/autocrawlerHQ/browsergrid/internal/provider"
-	_ "github.com/autocrawlerHQ/browsergrid/internal/provider/docker"
+	"github.com/autocrawlerHQ/browsergrid/internal/provider/docker"
 	"github.com/autocrawlerHQ/browsergrid/internal/sessions"
+	"github.com/autocrawlerHQ/browsergrid/internal/storage"
+	_ "github.com/autocrawlerHQ/browsergrid/internal/storage/local"
+	_ "github.com/autocrawlerHQ/browsergrid/internal/storage/s3"
 	"github.com/autocrawlerHQ/browsergrid/internal/tasks"
 )
 
@@ -28,6 +36,7 @@ type WorkerConfig struct {
 	RedisAddr   string
 	Concurrency int
 	Queues      map[string]int
+	Storage     config.StorageConfig
 }
 
 func main() {
@@ -42,13 +51,30 @@ func main() {
 		log.Fatal("[STARTUP] ✗ Failed to connect to database:", err)
 	}
 
-    sessStore := sessions.NewStore(db)
+	sessStore := sessions.NewStore(db)
+
+	// Initialize storage backend
+	storageBackend, err := storage.New(cfg.Storage.Backend, map[string]string{
+		"path":   cfg.Storage.LocalPath,
+		"bucket": cfg.Storage.S3Bucket,
+		"region": cfg.Storage.S3Region,
+		"prefix": cfg.Storage.S3Prefix,
+	})
+	if err != nil {
+		log.Fatal("[STARTUP] ✗ Failed to initialize storage:", err)
+	}
+	log.Printf("[STARTUP] ✓ Storage backend initialized: %s", cfg.Storage.Backend)
 
 	// Initialize deployment runner
 	deploymentRunner := deployments.NewDeploymentRunner(db, "/tmp/deployments")
 
-	prov, ok := provider.FromString(cfg.Provider)
-	if !ok {
+	// Initialize provider with storage backend
+	var prov provider.Provisioner
+	switch cfg.Provider {
+	case "docker":
+		prov = docker.NewDockerProvisioner(storageBackend)
+		log.Printf("[STARTUP] ✓ Docker provider initialized with storage backend")
+	default:
 		log.Fatalf("[STARTUP] ✗ Unknown provider type: %s", cfg.Provider)
 	}
 
@@ -66,8 +92,8 @@ func main() {
 
 	mux := asynq.NewServeMux()
 
-    mux.HandleFunc(tasks.TypeSessionStart, handleSessionStart(sessStore, prov))
-    mux.HandleFunc(tasks.TypeSessionStop, handleSessionStop(sessStore, prov))
+	mux.HandleFunc(tasks.TypeSessionStart, handleSessionStart(sessStore, prov))
+	mux.HandleFunc(tasks.TypeSessionStop, handleSessionStop(sessStore, prov))
 	mux.HandleFunc(tasks.TypeSessionHealthCheck, handleSessionHealthCheck(sessStore, prov))
 	mux.HandleFunc(tasks.TypeSessionTimeout, handleSessionTimeout(sessStore, prov, cfg.RedisAddr))
 	mux.HandleFunc(tasks.TypeDeploymentRun, handleDeploymentRun(deploymentRunner))
@@ -79,6 +105,7 @@ func main() {
 	log.Printf("[WORKER] └── Concurrency: %d", cfg.Concurrency)
 	log.Printf("[WORKER] └── Redis: %s", cfg.RedisAddr)
 	log.Printf("[WORKER] └── Queues: %v", cfg.Queues)
+	log.Printf("[WORKER] └── Storage: %s", cfg.Storage.Backend)
 	log.Printf("[WORKER] Ready to process tasks...")
 	log.Printf("[WORKER] =======================================")
 
@@ -113,7 +140,10 @@ func handleSessionStart(store *sessions.Store, prov provider.Provisioner) asynq.
 			return fmt.Errorf("failed to get session: %w", err)
 		}
 
-        // Profile logging removed
+		// Log if profile is being used
+		if sess.ProfileID != nil {
+			log.Printf("[TASK] Session %s using profile %s", sess.ID, *sess.ProfileID)
+		}
 
 		if err := store.UpdateSessionStatus(ctx, sess.ID, sessions.StatusStarting); err != nil {
 			log.Printf("[TASK] Warning: Failed to update session status: %v", err)
@@ -133,6 +163,9 @@ func handleSessionStart(store *sessions.Store, prov provider.Provisioner) asynq.
 		log.Printf("[TASK] ✓ Session %s started successfully", sess.ID)
 		log.Printf("[TASK] └── WebSocket: %s", wsURL)
 		log.Printf("[TASK] └── Live URL: %s", liveURL)
+		if sess.ProfileID != nil {
+			log.Printf("[TASK] └── Profile: %s", *sess.ProfileID)
+		}
 
 		client := asynq.NewClient(asynq.RedisClientOpt{Addr: payload.RedisAddr})
 		defer client.Close()
@@ -185,7 +218,10 @@ func handleSessionStop(store *sessions.Store, prov provider.Provisioner) asynq.H
 			return fmt.Errorf("failed to get session: %w", err)
 		}
 
-        // Profile persistence removed
+		// Log if profile will be saved
+		if sess.ProfileID != nil {
+			log.Printf("[TASK] Session %s will save profile %s", sess.ID, *sess.ProfileID)
+		}
 
 		if err := prov.Stop(ctx, sess); err != nil {
 			log.Printf("[TASK] ✗ Error stopping provider for session %s: %v", sess.ID, err)
@@ -203,6 +239,9 @@ func handleSessionStop(store *sessions.Store, prov provider.Provisioner) asynq.H
 		}
 
 		log.Printf("[TASK] ✓ Session %s stopped (reason: %s)", sess.ID, payload.Reason)
+		if sess.ProfileID != nil {
+			log.Printf("[TASK] └── Profile %s saved", *sess.ProfileID)
+		}
 		return nil
 	}
 }
@@ -311,6 +350,10 @@ func loadConfig() WorkerConfig {
 			"default":  5,
 			"low":      1,
 		},
+		Storage: config.StorageConfig{
+			Backend:   "local",
+			LocalPath: "/tmp/browsergrid/storage",
+		},
 	}
 
 	flag.StringVar(&cfg.Name, "name", "", "Worker name")
@@ -331,6 +374,23 @@ func loadConfig() WorkerConfig {
 	if cfg.Name == "" {
 		hostname, _ := os.Hostname()
 		cfg.Name = fmt.Sprintf("worker-%s", hostname)
+	}
+
+	// Load storage configuration from environment
+	if v := os.Getenv("STORAGE_BACKEND"); v != "" {
+		cfg.Storage.Backend = v
+	}
+	if v := os.Getenv("STORAGE_PATH"); v != "" {
+		cfg.Storage.LocalPath = v
+	}
+	if v := os.Getenv("STORAGE_S3_BUCKET"); v != "" {
+		cfg.Storage.S3Bucket = v
+	}
+	if v := os.Getenv("STORAGE_S3_REGION"); v != "" {
+		cfg.Storage.S3Region = v
+	}
+	if v := os.Getenv("STORAGE_S3_PREFIX"); v != "" {
+		cfg.Storage.S3Prefix = v
 	}
 
 	return cfg
@@ -375,6 +435,57 @@ func handleDeploymentSchedule(runner *deployments.DeploymentRunner) asynq.Handle
 		log.Printf("[DEPLOYMENT] ✓ Deployment schedule %s processed successfully", payload.DeploymentID)
 		return nil
 	}
+}
+
+// Utility functions for tar extraction - used by profile persistence
+func extractTarGz(src, dest string) error {
+	file, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	gzr, err := gzip.NewReader(file)
+	if err != nil {
+		return err
+	}
+	defer gzr.Close()
+
+	tr := tar.NewReader(gzr)
+
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		target := filepath.Join(dest, header.Name)
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, 0755); err != nil {
+				return err
+			}
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+				return err
+			}
+			file, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode))
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(file, tr); err != nil {
+				file.Close()
+				return err
+			}
+			file.Close()
+		}
+	}
+
+	return nil
 }
 
 func connectDB(databaseURL string) (*gorm.DB, error) {
