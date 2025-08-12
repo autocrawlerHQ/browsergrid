@@ -1,6 +1,6 @@
-import React from 'react';
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ExternalLink, Settings, Activity, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Settings, Activity, RefreshCw, StopCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,11 +14,13 @@ import { useGetApiV1SessionsIdEvents } from '@/lib/api/events/events';
 import { useGetApiV1Profiles } from '@/lib/api/profiles/profiles';
 import { processVncUrl } from '@/lib/utils';
 import type { Session, SessionEvent } from '@/lib/api/model';
-import { useGetApiV1SessionsId } from '@/lib/api/sessions/sessions';
+import { useGetApiV1SessionsId, useDeleteApiV1SessionsId } from '@/lib/api/sessions/sessions';
+import { toast } from 'sonner';
 
 export default function SessionDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [isStopping, setIsStopping] = useState(false);
   
   // For now, we'll need to get the session data from the sessions list
   // In a real implementation, you'd have a dedicated API endpoint for getting a single session
@@ -27,8 +29,28 @@ export default function SessionDetails() {
     { limit: 50, offset: 0 }
   );
 
-  const { data: session, isLoading: sessionLoading } = useGetApiV1SessionsId(id || '');
+  const { data: session, isLoading: sessionLoading, refetch: refetchSession } = useGetApiV1SessionsId(id || '');
   const { data: profilesData } = useGetApiV1Profiles(); 
+  const stopSession = useDeleteApiV1SessionsId();
+
+  const isTerminalStatus = (status?: string) => {
+    const terminal = new Set(['completed', 'failed', 'expired', 'crashed', 'timed_out', 'terminated']);
+    return !!status && terminal.has(status);
+  };
+
+  const handleStop = async () => {
+    if (!session?.id || isStopping) return;
+    try {
+      setIsStopping(true);
+      await stopSession.mutateAsync({ id: session.id });
+      toast.success('Session termination initiated');
+      await refetchSession();
+    } catch (e) {
+      toast.error('Failed to stop session');
+    } finally {
+      setIsStopping(false);
+    }
+  };
 
 
   if (!id) {
@@ -84,6 +106,22 @@ export default function SessionDetails() {
                 <ExternalLink className="h-3 w-3 mr-1.5" />
                 Open Live Session
               </a>
+            </Button>
+          )}
+          {!isTerminalStatus(session.status) && (
+            <Button
+              size="sm"
+              variant="destructive"
+              className="text-xs h-8"
+              onClick={handleStop}
+              disabled={isStopping}
+            >
+              {isStopping ? (
+                <RefreshCw className="h-3 w-3 mr-1.5 animate-spin" />
+              ) : (
+                <StopCircle className="h-3 w-3 mr-1.5" />
+              )}
+              Stop Session
             </Button>
           )}
           <Button size="sm" variant="outline" className="border-neutral-200 hover:bg-neutral-50 text-xs h-8">
@@ -200,6 +238,22 @@ export default function SessionDetails() {
                         Open Live Session
                       </a>
                     </Button>
+                    {!isTerminalStatus(session.status) && (
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="text-xs h-7"
+                        onClick={handleStop}
+                        disabled={isStopping}
+                      >
+                        {isStopping ? (
+                          <RefreshCw className="h-3 w-3 mr-1.5 animate-spin" />
+                        ) : (
+                          <StopCircle className="h-3 w-3 mr-1.5" />
+                        )}
+                        Stop
+                      </Button>
+                    )}
                     <Button size="sm" variant="outline" className="border-neutral-200 hover:bg-neutral-50 text-xs h-7">
                       <Settings className="h-3 w-3 mr-1.5" />
                       Configure

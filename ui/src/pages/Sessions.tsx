@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
-import { Plus, RefreshCw, Globe, ExternalLink, MoreVertical, Search, Filter, Eye, User } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState, useMemo } from 'react';
+import { Plus, RefreshCw, Globe, ExternalLink, MoreVertical, Search, Filter, Eye, User, StopCircle } from 'lucide-react';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { StatusBadge } from '@/components/dashboard/StatusBadge';
 import { SessionForm } from '@/components/SessionForm';
-import { useGetApiV1Sessions, usePostApiV1Sessions } from '@/lib/api/sessions/sessions';
+import { useGetApiV1Sessions, usePostApiV1Sessions, useDeleteApiV1SessionsId } from '@/lib/api/sessions/sessions';
 import { useGetApiV1Profiles } from '@/lib/api/profiles/profiles';
 import { processVncUrl } from '@/lib/utils';
 import type { Session, Browser, BrowserVersion, OperatingSystem, SessionStatus } from '@/lib/api/model';
@@ -20,6 +20,7 @@ export default function Sessions() {
   const { data: sessionsData, isLoading, refetch } = useGetApiV1Sessions();
   const { data: profilesData } = useGetApiV1Profiles();
   const createSession = usePostApiV1Sessions();
+  const stopSession = useDeleteApiV1SessionsId();
   const navigate = useNavigate();
   
   // State management
@@ -27,6 +28,7 @@ export default function Sessions() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<SessionStatus | 'all'>('all');
   const [browserFilter, setBrowserFilter] = useState<Browser | 'all'>('all');
+  const [stopLoadingId, setStopLoadingId] = useState<string | null>(null);
   
   const [newSession, setNewSession] = useState<Partial<Session>>({
     browser: 'chrome' as Browser,
@@ -84,6 +86,20 @@ export default function Sessions() {
 
   const handleViewDetails = (session: Session) => {
     navigate(`/sessions/${session.id}`);
+  };
+
+  const handleStopSession = async (session: Session) => {
+    if (!session.id) return;
+    try {
+      setStopLoadingId(session.id);
+      await stopSession.mutateAsync({ id: session.id });
+      toast.success('Session termination initiated');
+      await refetch();
+    } catch (error) {
+      toast.error('Failed to stop session');
+    } finally {
+      setStopLoadingId(null);
+    }
   };
 
   // Stats calculation
@@ -226,6 +242,8 @@ export default function Sessions() {
               sessions={filteredSessions}
               profiles={profilesData?.profiles || []}
               onViewDetails={handleViewDetails}
+              onStopSession={handleStopSession}
+              stopLoadingId={stopLoadingId}
             />
           )}
         </CardContent>
@@ -269,12 +287,20 @@ function SessionCreateDialog({
 function SessionsTable({ 
   sessions, 
   profiles,
-  onViewDetails 
+  onViewDetails,
+  onStopSession,
+  stopLoadingId,
 }: { 
   sessions: Session[];
   profiles: any[];
   onViewDetails: (session: Session) => void;
+  onStopSession: (session: Session) => void;
+  stopLoadingId: string | null;
 }) {
+  const isTerminalStatus = (status?: SessionStatus) => {
+    const terminal: SessionStatus[] = ['completed', 'failed', 'expired', 'crashed', 'timed_out', 'terminated'];
+    return !!status && terminal.includes(status);
+  };
   return (
     <Table>
       <TableHeader>
@@ -359,6 +385,22 @@ function SessionsTable({
                     <a href={processVncUrl(session.live_url)} target="_blank" rel="noopener noreferrer">
                       <ExternalLink className="h-3 w-3" />
                     </a>
+                  </Button>
+                )}
+                {!isTerminalStatus(session.status) && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => onStopSession(session)}
+                    disabled={stopLoadingId === session.id}
+                    className="h-7 w-7 p-0 text-red-600 hover:bg-red-50"
+                    title="Stop session"
+                  >
+                    {stopLoadingId === session.id ? (
+                      <RefreshCw className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <StopCircle className="h-3 w-3" />
+                    )}
                   </Button>
                 )}
                 <Button size="sm" variant="ghost" className="h-7 w-7 p-0 hover:bg-neutral-100">
