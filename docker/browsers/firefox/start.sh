@@ -22,22 +22,22 @@ echo "Current user: $(whoami)"
 echo "UID: $(id -u)"
 echo "GID: $(id -g)"
 
-# Handle Firefox profile directory
-if [ ! -d "${HOME}/firefox-profile" ]; then
-  echo "Creating Firefox profile directory"
-  mkdir -p ${HOME}/firefox-profile
-fi
-chmod 755 ${HOME}/firefox-profile 2>/dev/null || true
+# Handle Firefox profile directory - use data-dir for profile persistence
+PROFILE_PATH="${HOME}/data-dir"
 
-# If using a custom Firefox profile instead of the default one
-if [ -n "$FIREFOX_PROFILE_DIR" ]; then
-  echo "Using custom Firefox profile from $FIREFOX_PROFILE_DIR"
-  mkdir -p ${HOME}/firefox-profile-custom
-  cp -r $FIREFOX_PROFILE_DIR/* ${HOME}/firefox-profile-custom/
-  PROFILE_PATH="${HOME}/firefox-profile-custom"
-else
-  PROFILE_PATH="${HOME}/firefox-profile"
+if [ ! -d "$PROFILE_PATH" ]; then
+  echo "Creating Firefox profile directory at $PROFILE_PATH"
+  mkdir -p "$PROFILE_PATH"
 fi
+chmod 755 "$PROFILE_PATH" 2>/dev/null || true
+
+# If using a custom Firefox profile from environment variable, copy it to data-dir
+if [ -n "$FIREFOX_PROFILE_DIR" ] && [ -d "$FIREFOX_PROFILE_DIR" ]; then
+  echo "Copying custom Firefox profile from $FIREFOX_PROFILE_DIR to $PROFILE_PATH"
+  cp -r "$FIREFOX_PROFILE_DIR"/* "$PROFILE_PATH/" 2>/dev/null || true
+fi
+
+echo "Firefox will use profile directory: $PROFILE_PATH"
 
 # Configure Firefox for remote debugging and anti-fingerprinting
 echo "Writing Firefox preferences to ${PROFILE_PATH}/user.js"

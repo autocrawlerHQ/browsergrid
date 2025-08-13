@@ -35,12 +35,16 @@ if [ -z "$WEBKIT_PATH" ]; then
 fi
 BROWSER_PATH="${WEBKIT_PATH}/minibrowser-gtk"
 
-# Handle WebKit data directory
-if [ ! -d "${HOME}/webkit-data" ]; then
-  echo "Creating WebKit data directory"
-  mkdir -p ${HOME}/webkit-data
+# Handle WebKit data directory - use data-dir for profile persistence
+WEBKIT_DATA_DIR="${HOME}/data-dir"
+
+if [ ! -d "$WEBKIT_DATA_DIR" ]; then
+  echo "Creating WebKit data directory at $WEBKIT_DATA_DIR"
+  mkdir -p "$WEBKIT_DATA_DIR"
 fi
-chmod 755 ${HOME}/webkit-data 2>/dev/null || true
+chmod 755 "$WEBKIT_DATA_DIR" 2>/dev/null || true
+
+echo "WebKit will use data directory: $WEBKIT_DATA_DIR"
 
 # Create a WebKit to CDP proxy service
 echo "Creating WebKit proxy script"
@@ -54,7 +58,7 @@ const path = require('path');
 // Configuration
 const WEBKIT_PATH = '${BROWSER_PATH}';
 const PORT = ${REMOTE_DEBUGGING_PORT:-9222};
-const DATA_DIR = '${HOME}/webkit-data';
+const DATA_DIR = '${WEBKIT_DATA_DIR}';
 const DISPLAY = process.env.DISPLAY || ':1';
 const WIDTH = ${RESOLUTION_WIDTH:-1920};
 const HEIGHT = ${RESOLUTION_HEIGHT:-1080};
@@ -96,7 +100,7 @@ const args = [
   '--enable-remote-inspector',
   '--enable-memory-pressure-handler',
   '--window-size=${RESOLUTION_WIDTH},${RESOLUTION_HEIGHT}',
-  '--user-data-dir=${HOME}/webkit-data',
+  '--user-data-dir=${WEBKIT_DATA_DIR}',
   'about:blank'
 ];
 

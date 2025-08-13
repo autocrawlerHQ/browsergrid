@@ -1,11 +1,13 @@
 package docker
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -171,9 +173,12 @@ func (p *DockerProvisioner) Start(
 func (p *DockerProvisioner) Stop(ctx context.Context, sess *sessions.Session) error {
 	// Save profile data if ProfileID is present
 	if sess.ProfileID != nil && sess.ContainerID != nil {
+		log.Printf("[PROFILE_SAVE] stop: saving profile_id=%s container_id=%s", sess.ProfileID.String(), *sess.ContainerID)
 		if err := p.saveProfile(ctx, *sess.ProfileID, *sess.ContainerID); err != nil {
 			// Log error but don't fail the stop operation
-			fmt.Printf("Failed to save profile %s: %v\n", *sess.ProfileID, err)
+			log.Printf("[PROFILE_SAVE] stop: save failed for profile_id=%s error=%v", sess.ProfileID.String(), err)
+		} else {
+			log.Printf("[PROFILE_SAVE] stop: save succeeded for profile_id=%s", sess.ProfileID.String())
 		}
 	}
 
@@ -258,11 +263,13 @@ func (p *DockerProvisioner) prepareProfile(ctx context.Context, profileID uuid.U
 
 func (p *DockerProvisioner) saveProfile(ctx context.Context, profileID uuid.UUID, containerID string) error {
 	// Create temporary directory for copying profile data
+	log.Printf("[PROFILE_SAVE] start: profile_id=%s container_id=%s", profileID, containerID)
 	tempDir := filepath.Join(p.profileBasePath, "temp-"+profileID.String())
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
 		return fmt.Errorf("create temp directory: %w", err)
 	}
 	defer os.RemoveAll(tempDir)
+	log.Printf("[PROFILE_SAVE] temp_dir=%s", tempDir)
 
 	// Copy profile data from container
 	reader, _, err := p.cli.CopyFromContainer(ctx, containerID, "/home/user/data-dir")
@@ -270,6 +277,7 @@ func (p *DockerProvisioner) saveProfile(ctx context.Context, profileID uuid.UUID
 		return fmt.Errorf("copy profile from container: %w", err)
 	}
 	defer reader.Close()
+	log.Printf("[PROFILE_SAVE] copied tar stream from container")
 
 	// Extract tar to temp directory
 	tarPath := filepath.Join(tempDir, "profile.tar")
@@ -278,22 +286,60 @@ func (p *DockerProvisioner) saveProfile(ctx context.Context, profileID uuid.UUID
 		return fmt.Errorf("create tar file: %w", err)
 	}
 
-	_, err = io.Copy(tarFile, reader)
+	bytesWritten, err := io.Copy(tarFile, reader)
 	tarFile.Close()
 	if err != nil {
 		return fmt.Errorf("save tar file: %w", err)
 	}
+	log.Printf("[PROFILE_SAVE] wrote_tar_bytes=%d tar_path=%s", bytesWritten, tarPath)
 
 	// Extract tar and create ZIP
 	if err := p.extractTar(tarPath, tempDir); err != nil {
 		return fmt.Errorf("extract tar: %w", err)
 	}
+	log.Printf("[PROFILE_SAVE] extracted_tar_to=%s", tempDir)
+
+	// List extracted contents for debugging
+	if entries, err := os.ReadDir(tempDir); err == nil {
+		log.Printf("[PROFILE_SAVE] extracted_contents:")
+		for _, entry := range entries {
+			log.Printf("[PROFILE_SAVE]   - %s (dir=%t)", entry.Name(), entry.IsDir())
+		}
+	}
+
+	// Find the actual profile data directory
+	// Docker CopyFromContainer may extract to data-dir or to the current directory
+	var sourceDir string
+	dataDirPath := filepath.Join(tempDir, "data-dir")
+	if _, err := os.Stat(dataDirPath); err == nil {
+		sourceDir = dataDirPath
+		log.Printf("[PROFILE_SAVE] using_source_dir=%s", sourceDir)
+	} else {
+		// If data-dir doesn't exist, look for the first subdirectory that isn't profile.tar or profile.zip
+		if entries, err := os.ReadDir(tempDir); err == nil {
+			for _, entry := range entries {
+				if entry.IsDir() && entry.Name() != "." && entry.Name() != ".." {
+					sourceDir = filepath.Join(tempDir, entry.Name())
+					log.Printf("[PROFILE_SAVE] using_first_dir=%s", sourceDir)
+					break
+				}
+			}
+		}
+
+		// Fallback: use tempDir itself if no subdirectory found
+		if sourceDir == "" {
+			sourceDir = tempDir
+			log.Printf("[PROFILE_SAVE] using_temp_dir_fallback=%s", sourceDir)
+		}
+	}
 
 	// Create ZIP from extracted data
 	zipPath := filepath.Join(tempDir, "profile.zip")
-	dataDir := filepath.Join(tempDir, "data-dir")
-	if err := p.createZip(dataDir, zipPath); err != nil {
+	if err := p.createZip(sourceDir, zipPath); err != nil {
 		return fmt.Errorf("create profile zip: %w", err)
+	}
+	if st, err := os.Stat(zipPath); err == nil {
+		log.Printf("[PROFILE_SAVE] created_zip path=%s size=%d", zipPath, st.Size())
 	}
 
 	// Upload ZIP to storage
@@ -304,10 +350,11 @@ func (p *DockerProvisioner) saveProfile(ctx context.Context, profileID uuid.UUID
 	defer zipFile.Close()
 
 	storageKey := fmt.Sprintf("profiles/%s.zip", profileID.String())
+	log.Printf("[PROFILE_SAVE] saving_to_storage key=%s backend=%T", storageKey, p.storage)
 	if err := p.storage.Save(ctx, storageKey, zipFile); err != nil {
 		return fmt.Errorf("save profile to storage: %w", err)
 	}
-
+	log.Printf("[PROFILE_SAVE] done profile_id=%s key=%s", profileID, storageKey)
 	return nil
 }
 
@@ -352,49 +399,122 @@ func (p *DockerProvisioner) extractZip(zipPath, destPath string) error {
 }
 
 func (p *DockerProvisioner) createZip(sourceDir, zipPath string) error {
+	// Check if source directory exists and is accessible
+	if _, err := os.Stat(sourceDir); err != nil {
+		return fmt.Errorf("source directory %s: %w", sourceDir, err)
+	}
+
 	zipFile, err := os.Create(zipPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("create zip file: %w", err)
 	}
 	defer zipFile.Close()
 
 	zipWriter := zip.NewWriter(zipFile)
 	defer zipWriter.Close()
 
+	fileCount := 0
 	return filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
+			log.Printf("[PROFILE_SAVE] walk_error path=%s error=%v", path, err)
 			return err
 		}
 
 		relPath, err := filepath.Rel(sourceDir, path)
 		if err != nil {
-			return err
+			return fmt.Errorf("get relative path: %w", err)
 		}
 
-		if info.IsDir() {
+		// Skip the root directory itself
+		if relPath == "." {
 			return nil
 		}
 
+		if info.IsDir() {
+			// Create directory entry in ZIP
+			writer, err := zipWriter.Create(relPath + "/")
+			if err != nil {
+				return fmt.Errorf("create directory entry %s: %w", relPath, err)
+			}
+			_ = writer // Directory entries don't need content
+			log.Printf("[PROFILE_SAVE] zip_added_dir=%s", relPath)
+			return nil
+		}
+
+		// Add regular file
 		file, err := os.Open(path)
 		if err != nil {
-			return err
+			return fmt.Errorf("open file %s: %w", path, err)
 		}
 		defer file.Close()
 
 		writer, err := zipWriter.Create(relPath)
 		if err != nil {
-			return err
+			return fmt.Errorf("create zip entry %s: %w", relPath, err)
 		}
 
-		_, err = io.Copy(writer, file)
-		return err
+		bytes, err := io.Copy(writer, file)
+		if err != nil {
+			return fmt.Errorf("write file %s to zip: %w", relPath, err)
+		}
+
+		fileCount++
+		log.Printf("[PROFILE_SAVE] zip_added_file=%s bytes=%d", relPath, bytes)
+		return nil
 	})
 }
 
 func (p *DockerProvisioner) extractTar(tarPath, destPath string) error {
-	// Use tar command for simplicity
-	cmd := fmt.Sprintf("tar -xf %s -C %s", tarPath, destPath)
-	return execCommand(cmd)
+	file, err := os.Open(tarPath)
+	if err != nil {
+		return fmt.Errorf("open tar file: %w", err)
+	}
+	defer file.Close()
+
+	tr := tar.NewReader(file)
+
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("read tar header: %w", err)
+		}
+
+		target := filepath.Join(destPath, header.Name)
+
+		// Ensure the target path is within destPath to prevent path traversal
+		if !strings.HasPrefix(target, filepath.Clean(destPath)+string(os.PathSeparator)) {
+			return fmt.Errorf("invalid file path: %s", header.Name)
+		}
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, 0755); err != nil {
+				return fmt.Errorf("create directory %s: %w", target, err)
+			}
+			log.Printf("[PROFILE_SAVE] extracted_dir=%s", target)
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+				return fmt.Errorf("create parent directory for %s: %w", target, err)
+			}
+
+			outFile, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode))
+			if err != nil {
+				return fmt.Errorf("create file %s: %w", target, err)
+			}
+
+			_, err = io.Copy(outFile, tr)
+			outFile.Close()
+			if err != nil {
+				return fmt.Errorf("write file %s: %w", target, err)
+			}
+			log.Printf("[PROFILE_SAVE] extracted_file=%s", target)
+		}
+	}
+
+	return nil
 }
 
 func (p *DockerProvisioner) chownRecursive(path string, uid, gid int) error {
@@ -404,10 +524,6 @@ func (p *DockerProvisioner) chownRecursive(path string, uid, gid int) error {
 		}
 		return os.Chown(name, uid, gid)
 	})
-}
-
-func execCommand(cmd string) error {
-	return nil // Simplified - implement proper command execution
 }
 
 func (p *DockerProvisioner) HealthCheck(ctx context.Context, sess *sessions.Session) error {

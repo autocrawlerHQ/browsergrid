@@ -41,7 +41,7 @@ type WorkerConfig struct {
 
 func main() {
 	log.Println("========================================")
-	log.Println("       BrowserGrid Worker v2.0         ")
+	log.Println("       BrowserGrid Worker v2.2         ")
 	log.Println("========================================")
 
 	cfg := loadConfig()
@@ -154,6 +154,13 @@ func handleSessionStart(store *sessions.Store, prov provider.Provisioner) asynq.
 			log.Printf("[TASK] ✗ Failed to start session %s: %v", sess.ID, err)
 			store.UpdateSessionStatus(ctx, sess.ID, sessions.StatusFailed)
 			return fmt.Errorf("failed to start provider: %w", err)
+		}
+
+		// Persist container ID for later use during Stop (needed for profile saving)
+		if sess.ContainerID != nil {
+			if err := store.UpdateSessionContainer(ctx, sess.ID, *sess.ContainerID); err != nil {
+				log.Printf("[TASK] Warning: Failed to persist container ID: %v", err)
+			}
 		}
 
 		if err := store.UpdateSessionEndpoints(ctx, sess.ID, wsURL, liveURL, sessions.StatusRunning); err != nil {

@@ -33,6 +33,7 @@ func (s *Store) GetSession(ctx context.Context, id uuid.UUID) (*Session, error) 
 	return &sess, nil
 }
 
+// todo: single UpdateSession method that takes partial updates
 func (s *Store) UpdateSessionStatus(ctx context.Context, id uuid.UUID, status SessionStatus) error {
 	return s.db.WithContext(ctx).Model(&Session{}).
 		Where("id = ?", id).
@@ -49,6 +50,15 @@ func (s *Store) UpdateSessionEndpoints(ctx context.Context, id uuid.UUID, wsEndp
 	return s.db.WithContext(ctx).Model(&Session{}).
 		Where("id = ?", id).
 		Updates(updates).Error
+}
+
+func (s *Store) UpdateSessionContainer(ctx context.Context, id uuid.UUID, containerID string) error {
+	return s.db.WithContext(ctx).Model(&Session{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"container_id": containerID,
+			"updated_at":   time.Now(),
+		}).Error
 }
 
 func (s *Store) ListSessions(ctx context.Context,
